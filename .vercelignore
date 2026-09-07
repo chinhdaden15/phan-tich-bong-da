@@ -1,15 +1,18 @@
-# Tuyệt đối không đẩy key lên
+# Tuyệt đối không đẩy thông tin xác thực lên
 .env
 .env.local
+.env.example
 .vercel/
 
-# Không cần cho trang tĩnh
-.venv/
-data/
-pipeline/
-__pycache__/
+# Không cần cho trang tĩnh.
+# Dấu "/" đầu dòng là BẮT BUỘC: viết "data/" sẽ khớp mọi thư mục tên data ở
+# mọi cấp, kể cả public/data/ — và toàn bộ dữ liệu của app biến mất khỏi bản
+# triển khai, trang tải được nhưng mọi tab đều trắng.
+/.venv/
+/data/
+/pipeline/
+/__pycache__/
+/.github/
+/.claude/
+/README.md
 *.pyc
-.github/
-.claude/
-README.md
-.env.example
