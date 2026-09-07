@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-07T13:18:03+00:00",
+  "generated_at": "2026-09-07T21:56:26+00:00",
   "leagues": [
     {
       "id": "premier-league",
@@ -12,7 +12,7 @@
       "id": "la-liga",
       "name": "La Liga",
       "season": 2026,
-      "fixtures": 31,
+      "fixtures": 29,
       "teams": 20
     },
     {
