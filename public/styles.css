@@ -1,0 +1,344 @@
+/* Giao diện tối, ưu tiên điện thoại. Không phụ thuộc framework nào —
+   giữ app nhẹ, tải nhanh và không cần bước build. */
+
+:root {
+  --bg: #0b0f1a;
+  --surface: #141a29;
+  --surface-2: #1c2438;
+  --border: #26304a;
+  --text: #e8edf7;
+  --text-dim: #93a0bd;
+  --text-faint: #5d6b8a;
+
+  --home: #34d399;
+  --draw: #fbbf24;
+  --away: #60a5fa;
+  --accent: #7c8cff;
+  --danger: #f87171;
+
+  --radius: 14px;
+  --radius-sm: 9px;
+  --tabbar-h: 60px;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  overscroll-behavior-y: none;
+}
+
+/* ---------- Thanh trên ---------- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(11, 15, 26, .92);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  padding-top: env(safe-area-inset-top);
+}
+.topbar-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px 6px;
+}
+.brand { font-size: 17px; font-weight: 650; margin: 0; letter-spacing: -.2px; }
+.icon-btn {
+  background: none; border: none; color: var(--text-dim);
+  padding: 7px; border-radius: 50%; cursor: pointer; display: grid; place-items: center;
+}
+.icon-btn:active { background: var(--surface-2); color: var(--text); }
+.icon-btn.spinning svg { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.league-tabs {
+  display: flex; gap: 7px; padding: 4px 16px 10px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.league-tabs::-webkit-scrollbar { display: none; }
+.league-tab {
+  flex: 0 0 auto; padding: 6px 14px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text-dim); font-size: 13px; font-weight: 550;
+  cursor: pointer; white-space: nowrap;
+}
+.league-tab[aria-selected="true"] {
+  background: var(--accent); border-color: var(--accent); color: #0b0f1a;
+}
+
+/* ---------- Vùng nội dung ---------- */
+.view {
+  padding: 14px 14px calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 20px);
+  max-width: 640px; margin: 0 auto;
+}
+
+.loading { text-align: center; padding: 60px 20px; color: var(--text-dim); }
+.spinner {
+  width: 26px; height: 26px; margin: 0 auto 14px;
+  border: 2.5px solid var(--border); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin .7s linear infinite;
+}
+
+.day-header {
+  font-size: 12px; font-weight: 650; color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: .7px;
+  margin: 20px 2px 9px;
+}
+.day-header:first-child { margin-top: 2px; }
+
+/* ---------- Thẻ trận đấu ---------- */
+.match {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 13px 14px; margin-bottom: 9px;
+  cursor: pointer;
+}
+.match:active { background: var(--surface-2); }
+
+.match-meta {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 11.5px; color: var(--text-faint); margin-bottom: 9px;
+}
+.badge {
+  padding: 2px 7px; border-radius: 5px; font-size: 10.5px;
+  font-weight: 650; text-transform: uppercase; letter-spacing: .4px;
+}
+.badge.cao        { background: rgba(52,211,153,.14);  color: var(--home); }
+.badge.trung      { background: rgba(251,191,36,.14);  color: var(--draw); }
+.badge.thap       { background: rgba(248,113,113,.14); color: var(--danger); }
+
+.teams { display: grid; gap: 5px; margin-bottom: 11px; }
+.team-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.team-name { font-size: 14.5px; font-weight: 550; }
+.team-name.leader { color: var(--text); }
+.team-name.trailer { color: var(--text-dim); }
+.xg {
+  font-size: 12.5px; font-variant-numeric: tabular-nums;
+  color: var(--text-dim); font-weight: 600; flex: 0 0 auto;
+}
+
+/* Thanh xác suất ba cửa */
+.probbar {
+  display: flex; height: 6px; border-radius: 999px;
+  overflow: hidden; background: var(--surface-2); margin-bottom: 7px;
+}
+.probbar span { display: block; height: 100%; }
+.probbar .p-home { background: var(--home); }
+.probbar .p-draw { background: var(--draw); }
+.probbar .p-away { background: var(--away); }
+
+.problabels {
+  display: flex; justify-content: space-between;
+  font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--text-faint);
+}
+.problabels b { font-weight: 650; }
+.problabels .l-home b { color: var(--home); }
+.problabels .l-draw b { color: var(--draw); }
+.problabels .l-away b { color: var(--away); }
+
+/* ---------- Bảng ---------- */
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden; margin-bottom: 14px;
+}
+.card-title {
+  padding: 12px 14px 10px; font-size: 13px; font-weight: 650;
+  color: var(--text-dim); border-bottom: 1px solid var(--border);
+}
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th {
+  text-align: right; padding: 8px 6px; font-size: 11px; font-weight: 600;
+  color: var(--text-faint); text-transform: uppercase; letter-spacing: .4px;
+  border-bottom: 1px solid var(--border);
+}
+th:nth-child(2) { text-align: left; }
+td { padding: 9px 6px; text-align: right; border-bottom: 1px solid rgba(38,48,74,.5); }
+td:nth-child(2) { text-align: left; font-weight: 550; }
+tr:last-child td { border-bottom: none; }
+td.pos { color: var(--text-faint); font-variant-numeric: tabular-nums; width: 30px; padding-left: 12px; }
+td.num { font-variant-numeric: tabular-nums; color: var(--text-dim); }
+td.pts { font-weight: 700; color: var(--text); padding-right: 12px; }
+
+.zone-ucl { box-shadow: inset 3px 0 0 var(--home); }
+.zone-uel { box-shadow: inset 3px 0 0 var(--away); }
+.zone-rel { box-shadow: inset 3px 0 0 var(--danger); }
+
+.form { display: inline-flex; gap: 3px; }
+.form i {
+  width: 15px; height: 15px; border-radius: 3px; font-style: normal;
+  font-size: 9.5px; font-weight: 700; display: grid; place-items: center; color: #0b0f1a;
+}
+.form i.W { background: var(--home); }
+.form i.D { background: var(--draw); }
+.form i.L { background: var(--danger); }
+
+/* Thanh sức mạnh hai chiều.
+   Kích thước tính để bảng 4 cột vừa đúng màn hình 375px mà không tràn:
+   30 (hạng) + 2×74 (hai cột chỉ số) = 178, còn ~190px cho tên đội. */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+.strength-bar { display: flex; align-items: center; gap: 5px; justify-content: flex-end; }
+.strength-track {
+  width: 32px; height: 5px; border-radius: 999px;
+  background: var(--surface-2); overflow: hidden; flex: 0 0 auto;
+}
+.strength-track i { display: block; height: 100%; border-radius: 999px; }
+.strength-val { font-variant-numeric: tabular-nums; font-size: 11.5px; width: 37px; text-align: right; }
+
+/* Bảng sức mạnh cần nén chặt hơn bảng xếp hạng vì có hai cột chỉ số. */
+.strength-table th, .strength-table td { padding-left: 3px; padding-right: 3px; }
+.strength-table th:first-child, .strength-table td:first-child { padding-left: 10px; }
+.strength-table th:last-child, .strength-table td:last-child { padding-right: 10px; }
+.strength-table th { font-size: 9.5px; letter-spacing: .2px; }
+.strength-table td:nth-child(2) { font-size: 13px; line-height: 1.25; }
+
+/* ---------- Bảng chi tiết trượt lên ---------- */
+.sheet { position: fixed; inset: 0; z-index: 50; }
+.sheet-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.6); }
+.sheet-panel {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  max-height: 90vh; overflow-y: auto;
+  background: var(--bg); border-top: 1px solid var(--border);
+  border-radius: 20px 20px 0 0;
+  animation: slideUp .22s cubic-bezier(.32,.72,0,1);
+  padding-bottom: calc(env(safe-area-inset-bottom) + 24px);
+}
+@keyframes slideUp { from { transform: translateY(100%); } }
+.sheet-grip { padding: 11px 0 4px; display: grid; place-items: center; cursor: pointer; }
+.sheet-grip::before {
+  content: ""; width: 36px; height: 4px; border-radius: 999px; background: var(--border);
+}
+.sheet-body { padding: 6px 16px 0; }
+
+.sheet-title { font-size: 18px; font-weight: 650; margin: 6px 0 3px; letter-spacing: -.3px; }
+.sheet-sub { color: var(--text-faint); font-size: 12.5px; margin: 0 0 16px; }
+
+.section-label {
+  font-size: 11.5px; font-weight: 650; color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: .7px; margin: 20px 0 9px;
+}
+
+.kv { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(38,48,74,.55); font-size: 13.5px; }
+.kv:last-child { border-bottom: none; }
+.kv span { color: var(--text-dim); }
+.kv b { font-weight: 650; font-variant-numeric: tabular-nums; }
+
+.scores { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+.score-chip {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 9px 4px; text-align: center;
+}
+.score-chip b { display: block; font-size: 15px; font-variant-numeric: tabular-nums; }
+.score-chip span { font-size: 11px; color: var(--text-faint); }
+
+.h2h-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 0; font-size: 13px; border-bottom: 1px solid rgba(38,48,74,.55);
+}
+.h2h-row:last-child { border-bottom: none; }
+.h2h-date { color: var(--text-faint); font-size: 11.5px; flex: 0 0 74px; }
+.h2h-teams { flex: 1; color: var(--text-dim); }
+.h2h-score { font-weight: 700; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+
+.note {
+  background: var(--surface); border: 1px solid var(--border);
+  border-left: 3px solid var(--draw);
+  border-radius: var(--radius-sm); padding: 11px 13px;
+  font-size: 12.5px; color: var(--text-dim); margin: 14px 0;
+}
+.note strong { color: var(--text); }
+
+.prose { font-size: 13.5px; color: var(--text-dim); }
+.prose h3 { font-size: 14px; color: var(--text); margin: 18px 0 7px; }
+.prose p { margin: 0 0 10px; }
+.prose code {
+  background: var(--surface-2); padding: 1px 5px; border-radius: 4px;
+  font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.prose ul { margin: 0 0 10px; padding-left: 20px; }
+.prose li { margin-bottom: 4px; }
+
+.empty { text-align: center; padding: 48px 20px; color: var(--text-faint); font-size: 13.5px; }
+
+/* ---------- Thanh điều hướng dưới ---------- */
+.tabbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  background: rgba(11,15,26,.94); backdrop-filter: blur(12px);
+  border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.tab {
+  background: none; border: none; color: var(--text-faint);
+  padding: 9px 4px 7px; font-size: 10.5px; font-weight: 550;
+  display: grid; justify-items: center; gap: 3px; cursor: pointer;
+}
+.tab svg { width: 21px; height: 21px; }
+.tab.active { color: var(--accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* Nhãn cho trận đã có kèo và trận mô hình lệch nhiều so với thị trường */
+.badge.market { background: rgba(124,140,255,.16); color: var(--accent); margin-right: 4px; }
+.badge.gap    { background: rgba(251,191,36,.16);  color: var(--draw);   margin-right: 4px; }
+
+/* Nhãn mức tín hiệu trên thẻ trận */
+.badge.sig-ro  { background: rgba(52,211,153,.16); color: var(--home);  margin-right: 4px; }
+.badge.sig-vua { background: rgba(251,191,36,.16); color: var(--draw);  margin-right: 4px; }
+.badge.sig-mo  { background: rgba(147,160,189,.14); color: var(--text-dim); margin-right: 4px; }
+
+/* Khối kết luận ở đầu bảng chi tiết */
+.verdict {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 13px 14px; margin: 14px 0 4px; background: var(--surface);
+}
+.verdict-ro  { border-left: 3px solid var(--home); }
+.verdict-vua { border-left: 3px solid var(--draw); }
+.verdict-mo  { border-left: 3px solid var(--text-faint); }
+
+.verdict-head { font-size: 12px; color: var(--text-dim); margin-bottom: 5px; }
+.verdict-pick { font-size: 17px; font-weight: 650; letter-spacing: -.2px; margin-bottom: 7px; }
+.verdict-note { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; }
+.verdict-warn {
+  font-size: 12px; color: var(--draw); margin-top: 8px;
+  padding-top: 8px; border-top: 1px solid var(--border);
+}
+.verdict-fail {
+  font-size: 12px; color: var(--text-faint); margin-top: 8px;
+  padding-top: 8px; border-top: 1px solid var(--border);
+}
+.verdict-fail strong { color: var(--text-dim); }
+
+/* Ba tỷ số thay vì tám: mỗi ô rộng hơn, dễ đọc hơn */
+.scores-3 { grid-template-columns: repeat(3, 1fr); }
+.scores-3 .score-chip { padding: 12px 4px; }
+.scores-3 .score-chip b { font-size: 18px; }
+
+/* Nhận định: kèo và tỷ số đặt cạnh nhau cho dễ đối chiếu */
+.verdict-grid {
+  display: grid; grid-template-columns: 1fr auto; gap: 10px;
+  align-items: start; margin: 9px 0 11px;
+}
+.verdict-cell { display: grid; gap: 2px; }
+.verdict-grid .verdict-cell:last-child { text-align: right; }
+.verdict-label {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px;
+  color: var(--text-faint); font-weight: 650;
+}
+.verdict-value { font-size: 18px; font-weight: 650; letter-spacing: -.3px; line-height: 1.2; }
+.verdict-prob { font-size: 13px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.verdict-note + .verdict-note { margin-top: 7px; }
+
+/* Nhận định gọn trên thẻ trận: kèo và tỷ số, để lướt là thấy ngay */
+.card-verdict {
+  display: flex; justify-content: space-between; gap: 10px;
+  margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--border);
+  font-size: 12.5px; color: var(--text-dim);
+}
+.card-verdict b { color: var(--text); font-weight: 650; font-variant-numeric: tabular-nums; }

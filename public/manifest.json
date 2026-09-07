@@ -1,0 +1,15 @@
+{
+  "name": "Phân Tích Bóng Đá",
+  "short_name": "Bóng Đá",
+  "description": "Lịch thi đấu, sức mạnh đội bóng và phân tích trước trận theo mô hình Dixon-Coles",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0f1a",
+  "theme_color": "#0b0f1a",
+  "lang": "vi",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

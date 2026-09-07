@@ -1,0 +1,77 @@
+name: Cập nhật dữ liệu bóng đá
+
+# Chạy 4 lần/ngày, cách nhau 6 tiếng (08:00, 14:00, 20:00, 02:00 giờ VN).
+#
+# Hai loại dữ liệu có ràng buộc quota hoàn toàn khác nhau nên tách riêng thay
+# vì lấy nhịp chậm nhất làm chuẩn cho cả hai:
+#
+#   Kết quả trận (football-data.org)  giới hạn 10 request/PHÚT, không giới hạn
+#                                      theo ngày -> chạy bao nhiêu cũng được
+#   Kèo (The Odds API)                 500 lượt/THÁNG, mỗi giải tốn 2 lượt
+#
+# Nên lịch chạy đặt theo nhu cầu của kết quả, còn kèo tự hãm bằng cache 11
+# tiếng trong odds_live.py: mỗi ngày chỉ thực sự gọi khoảng 2 lần.
+#   3 giải × 2 thị trường × 2 lần/ngày × 30 ngày = 360 lượt -> an toàn
+#
+# Nhờ vậy bảng xếp hạng và cột thắng/hoà/thua cập nhật trong vòng vài giờ sau
+# trận, thay vì phải đợi tới nhịp chạy chậm của phần kèo.
+on:
+  schedule:
+    - cron: "0 1,7,13,19 * * *"
+  workflow_dispatch:        # cho phép bấm chạy tay
+  push:
+    branches: [main]
+    paths:
+      - "pipeline/**"
+      - ".github/workflows/update-data.yml"
+
+# Tránh hai lần chạy cùng lúc ghi đè lên nhau.
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Cài thư viện
+        run: pip install -r pipeline/requirements.txt
+
+      # Cache dữ liệu lịch sử để không tải lại cùng một file mỗi lần chạy.
+      - name: Khôi phục cache dữ liệu
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: football-cache-${{ github.run_id }}
+          restore-keys: football-cache-
+
+      - name: Dựng dữ liệu
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          FOOTBALL_DATA_ORG_KEY: ${{ secrets.FOOTBALL_DATA_ORG_KEY }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+        run: python pipeline/build.py
+
+      - name: Commit nếu có thay đổi
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/data
+          if git diff --staged --quiet; then
+            echo "Dữ liệu không đổi, bỏ qua commit."
+          else
+            git commit -m "chore: cập nhật dữ liệu $(date -u '+%Y-%m-%d %H:%M UTC')"
+            git push
+          fi

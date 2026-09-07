@@ -1,0 +1,6 @@
+{
+  "_huong_dan": "Nhập cầu thủ vắng mặt tại đây. position: Goalkeeper|Defender|Midfielder|Attacker. minutes_share: tỷ lệ phút thường đá (0-1). importance: 1.0 trụ cột, 1.5 ngôi sao, 2.0 tối đa. Tên đội phải viết y hệt trong app.",
+  "premier-league": {},
+  "la-liga": {},
+  "champions-league": {}
+}

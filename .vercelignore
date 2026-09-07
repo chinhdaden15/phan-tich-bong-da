@@ -1,0 +1,13 @@
+# Tuyệt đối không đẩy key lên
+.env
+
+# Không cần cho trang tĩnh
+.venv/
+data/
+pipeline/
+__pycache__/
+*.pyc
+.github/
+.claude/
+README.md
+.env.example

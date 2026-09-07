@@ -1,0 +1,525 @@
+# Phân Tích Bóng Đá
+
+App web xem trên điện thoại: lịch thi đấu, sức mạnh đội bóng và phân tích
+trước trận bằng mô hình thống kê. Chạy **hoàn toàn miễn phí**, không có
+chi phí máy chủ.
+
+---
+
+## Chạy thử ngay
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r pipeline/requirements.txt
+.venv/bin/python pipeline/build.py
+python3 -m http.server 8765 --directory public
+```
+
+Mở `http://localhost:8765`. **Không cần API key nào** cho Ngoại hạng Anh
+và La Liga.
+
+---
+
+## Kiến trúc
+
+```
+GitHub Actions (cron, miễn phí)
+        │  chạy pipeline/build.py 3 lần/ngày
+        ▼
+   nguồn dữ liệu  ──►  mô hình Dixon-Coles  ──►  public/data/*.json
+        │                                              │
+        │                                              │ commit vào repo
+        ▼                                              ▼
+  openfootball                              Cloudflare Pages (miễn phí)
+  football-data.org                                    │
+  API-Football                                         ▼
+                                              PWA trên điện thoại
+```
+
+Điểm mấu chốt: **điện thoại không bao giờ gọi API bóng đá**. Nó chỉ đọc file
+JSON tĩnh đã dựng sẵn. Nhờ vậy không bao giờ chạm giới hạn tốc độ của gói
+miễn phí, tải gần như tức thì, và xem được offline.
+
+Tổng dung lượng dữ liệu: khoảng 160 KB cho 2 giải.
+
+---
+
+## Nguồn dữ liệu
+
+| Nguồn | Dùng cho | Cần key | Giới hạn |
+|---|---|---|---|
+| **openfootball** | Kết quả lịch sử, lịch thi đấu (12 giải) | Không | Không |
+| **football-data.org** | Champions League | Có (miễn phí) | 10 req/phút, 12 giải |
+| **API-Football** | ~~Chấn thương, đội hình~~ | Có (miễn phí) | **gói Free chặn mùa hiện tại** |
+| **The Odds API** | Kèo trận sắp tới | Có (miễn phí) | 500 lượt/tháng |
+| **mirror football-data** | Kèo đóng cửa lịch sử | Không | Không |
+
+Đăng ký key miễn phí (tuỳ chọn):
+- football-data.org — https://www.football-data.org/client/register
+- API-Football — https://dashboard.api-football.com/register
+- The Odds API — https://the-odds-api.com/
+
+Copy `.env.example` thành `.env` rồi điền key vào.
+
+> **Lưu ý về độ bền:** ngay trong lúc dựng dự án này, football-data.co.uk
+> trả lỗi 503 và ClubElo không phản hồi. Vì thế xương sống dữ liệu đặt ở
+> openfootball — phục vụ qua hạ tầng GitHub nên gần như không bao giờ sập.
+>
+> Kèo lịch sử lấy từ một bản mirror GitHub của football-data.co.uk. Vì đó là
+> repo bên thứ ba không rõ danh tính, `odds_history.py` đối chiếu kết quả trận
+> đấu với openfootball trước khi dùng — lần kiểm tra gần nhất khớp 380/380 trận
+> và biên nhà cái trung bình 2.95%, đúng đặc trưng của Pinnacle.
+
+---
+
+## Mô hình dự đoán
+
+**Dixon-Coles (1997)** — Poisson hai biến có hiệu chỉnh tỷ số thấp.
+
+Mỗi đội có hai tham số: sức tấn công và sức phòng ngự. Với trận đấu giữa
+đội nhà *i* và đội khách *j*:
+
+```
+λ = exp(intercept + atk[i] + def[j] + lợi_thế_sân_nhà)
+μ = exp(intercept + atk[j] + def[i])
+
+P(x, y) = tau(x, y, λ, μ) · Poisson(x; λ) · Poisson(y; μ)
+```
+
+`tau` sửa lại xác suất cho bốn tỷ số thấp (0-0, 0-1, 1-0, 1-1) — nơi mô hình
+Poisson độc lập lệch rõ so với thực tế.
+
+Từ ma trận tỷ số đầy đủ, mọi thị trường (1X2, tài/xỉu, cả hai đội ghi bàn,
+tỷ số chính xác) đều được suy ra, nên chúng luôn nhất quán với nhau.
+
+### Hai kỹ thuật quan trọng
+
+**Suy giảm theo thời gian** (`xi`) — trận cũ có trọng số nhỏ hơn:
+`w = exp(-xi · số_ngày_trước)`. Nhờ đó phong độ gần đây được coi trọng hơn.
+
+**Co ngót Bayes** (`ridge`) — kéo sức mạnh của đội ít dữ liệu về mức trung
+bình giải. Không có bước này, một đội mới thăng hạng thắng 2 trận đầu mùa
+sẽ bị mô hình gán hệ số phòng ngự `-5.24`, tức là gần như không thể thủng
+lưới. Có co ngót, con số đó về mức hợp lý.
+
+### Lớp hiệu chỉnh bối cảnh
+
+Nhân vào λ và μ, gồm chấn thương/vắng mặt, ngày nghỉ, và động lực theo vị trí
+trên bảng xếp hạng ở giai đoạn cuối mùa.
+
+Các hệ số Dixon-Coles được **ước lượng từ dữ liệu**. Các hệ số hiệu chỉnh thì
+**không** — chúng là suy đoán có cơ sở, đặt ở mức dè dặt, vì chưa có dữ liệu
+chấn thương lịch sử miễn phí đủ dài để khớp. Mọi hiệu chỉnh đều bị bão hoà
+mềm để một ca chấn thương không thể làm lệch dự đoán quá mức, và app luôn
+hiển thị đóng góp của từng yếu tố.
+
+---
+
+## Chấn thương: vì sao phải nhập tay
+
+Đây là phần duy nhất trong dự án không tự động hoá được. Đã thử và loại cả ba
+nguồn:
+
+| nguồn | kết quả |
+|---|---|
+| API-Football (gói Free) | `"Free plans do not have access to this season, try from 2022 to 2024"` |
+| ESPN (endpoint ẩn) | Trả HTTP 200 nhưng **0 đội, 0 ca** cho mùa 2026 |
+| Transfermarkt | Phải scrape, vùng xám điều khoản, dễ vỡ |
+
+Lớp hiệu chỉnh trong `model/adjustments.py` đã sẵn sàng từ đầu — chỉ thiếu đầu
+vào. Nên đầu vào chuyển thành `data/absences.json`, người dùng tự điền:
+
+```json
+{
+  "premier-league": {
+    "Manchester City FC": [
+      {"name": "Rodri", "position": "Midfielder",
+       "minutes_share": 0.85, "importance": 1.8, "reason": "chấn thương"}
+    ]
+  }
+}
+```
+
+Người theo dõi bóng đá thường xuyên biết ai vắng nhanh hơn bất kỳ API nào.
+Mọi bản ghi đều được kiểm tra định dạng khi nạp; sai thì bỏ qua kèm cảnh báo,
+không để giá trị lạ lọt vào mô hình.
+
+---
+
+## Vì sao app không có ô nhập API key
+
+Trang web chỉ đọc file JSON dựng sẵn — nó **không bao giờ tự gọi API bóng đá**.
+Người gọi API là pipeline Python. Nếu đặt key vào giao diện thì key nằm trong
+mã trang mà bất kỳ ai mở link đều đọc được, và mỗi người xem lại tiêu quota
+của bạn.
+
+Key đặt ở hai chỗ:
+
+- **Chạy trên máy** — file `.env`
+- **Chạy trên GitHub** — Settings → Secrets and variables → Actions
+
+Tab **Cài đặt** trong app hiển thị nguồn nào đang hoạt động, nguồn nào bị chặn,
+dữ liệu cập nhật lần cuối lúc nào — nhưng chỉ hiện trạng thái có/không, không
+bao giờ hiện giá trị key.
+
+---
+
+## Đọc kết quả: cửa nào đáng tin
+
+Một xác suất trần trụi không trả lời được câu hỏi "nên tin cái gì". App tính
+thêm **mức khác thường** cho từng cửa:
+
+```
+mức khác thường = xác suất của trận này − tần suất cửa đó ở một trận bất kỳ
+```
+
+Tần suất nền lấy từ chính lịch sử của giải đó, không phải hằng số chung —
+La Liga hoà nhiều hơn Ngoại hạng Anh, Bundesliga nhiều bàn hơn Serie A.
+
+Bước này quan trọng hơn vẻ ngoài của nó. Ban đầu tôi so với mốc ngẫu nhiên
+(1/3 cho 1X2, 1/2 cho hai cửa) và kết quả là **"Tài 1.5" đứng đầu ở gần như
+mọi trận** — đúng, vì nó xảy ra ~75% ở mọi trận bóng đá, nhưng nó chẳng nói
+lên điều gì riêng về trận đang xét. So với nền thực tế thì "Tài 1.5 86%, nền
+80%" chỉ vượt 6 điểm và tự động rơi xuống cuối bảng.
+
+Mỗi trận được xếp một bậc — **rõ / vừa / mơ hồ** — và bị hạ bậc khi mô hình
+lệch thị trường quá 8 điểm phần trăm, khi dữ liệu đội bóng mỏng, hoặc khi
+chưa có kèo. Phân bố thực tế trên 69 trận: 36 mơ hồ, 28 vừa, 5 rõ. Phần lớn
+trận bóng đá **không** có tín hiệu rõ, và app nói thẳng điều đó thay vì bịa ra
+một con số nghe chắc chắn.
+
+Mỗi kết luận đều kèm tỷ lệ hỏng: "vẫn hỏng khoảng 34% số lần".
+
+---
+
+## Kết quả kiểm định
+
+Kiểm định cuốn chiếu trên Ngoại hạng Anh, 780 trận (mùa 2024-25 và 2025-26).
+Khi dự đoán mỗi trận, mô hình chỉ được nhìn các trận đã đá **trước** ngày đó.
+
+| | RPS ↓ | Log-loss ↓ | Chính xác ↑ |
+|---|---|---|---|
+| **Mô hình Dixon-Coles** | **0.2069** | **1.0097** | **50.1%** |
+| Tần suất lịch sử | 0.2315 | 1.0829 | 41.9% |
+| Đoán đều 1/3 | 0.2348 | 1.0986 | 41.9% |
+
+Hiệu chuẩn tốt: trong nhóm dự đoán "khoảng 45%", thực tế xảy ra 45.7%;
+nhóm "khoảng 55%" thực tế 55.8%.
+
+### Chọn tham số — và vì sao tinh chỉnh không giúp được nhiều
+
+Dò lưới 5×6 trên `xi` và `ridge` (1.560 trận, EPL + La Liga):
+
+- `ridge = 2.0` tốt nhất ở **cả 5** mức `xi` — tín hiệu nhất quán về hướng.
+- `xi = 0` (không suy giảm thời gian) luôn tệ nhất → phong độ gần đây có ý nghĩa.
+- `ridge = 30` luôn tệ → co ngót quá tay xoá mất khác biệt giữa các đội.
+
+Quán quân dò lưới là `xi=0.0030, ridge=2.0` (RPS 0.20172). Nhưng khi **kiểm
+chứng trên giai đoạn 2022-2024 mà dò lưới chưa từng thấy**, thứ tự đảo lại:
+
+| cấu hình | RPS trên giai đoạn giữ riêng |
+|---|---|
+| `xi=0.0018, ridge=2.0` | **0.19823** |
+| `xi=0.0030, ridge=2.0` | 0.19845 |
+| `xi=0.0018, ridge=8.0` (mặc định cũ) | 0.19905 |
+
+Quán quân dò lưới tụt xuống thứ hai — dấu hiệu điển hình của khớp quá mức vào
+chính tập dùng để chọn nó.
+
+Quan trọng hơn: **bootstrap theo cặp cho thấy không cặp nào khác biệt có ý
+nghĩa thống kê** (mọi khoảng tin cậy 95% đều chứa 0). Việc tinh chỉnh không
+mang lại cải thiện chứng minh được. Dự án chốt `xi=0.0018, ridge=2.0` vì đó là
+cấu hình có bằng chứng nhất quán nhất và không có mặt trái, chứ không phải vì
+nó "thắng".
+
+Đây cũng là lời nhắc: phần lớn giá trị của mô hình nằm ở việc chọn đúng dạng
+mô hình và xử lý đúng đội thiếu dữ liệu, không phải ở việc vặn tham số.
+
+Chạy lại:
+
+```bash
+.venv/bin/python pipeline/backtest.py --leagues premier-league --test-start 2024-08-01
+.venv/bin/python pipeline/backtest.py --grid          # dò tham số xi và ridge
+```
+
+---
+
+## Cập nhật kết quả sau mỗi vòng
+
+Hai nguồn, mỗi nguồn làm đúng việc nó giỏi:
+
+| nguồn | vai trò | độ trễ | giới hạn |
+|---|---|---|---|
+| openfootball | lịch sử sâu (20+ mùa) | ~1 tuần | không có |
+| football-data.org | kết quả mùa hiện tại | vài phút sau trận | 10 req/**phút** |
+
+`sources/results.py` nạp lịch sử từ openfootball rồi bổ sung các trận mới từ
+football-data.org, loại trùng theo (ngày, đội nhà, đội khách). Tên đội của
+football-data.org được quy về tên openfootball trước khi so, nếu không
+"Deportivo Alavés" và "Alavés" sẽ thành hai đội riêng biệt trong mô hình.
+
+Nhờ vậy bảng xếp hạng, cột thắng/hoà/thua và phong độ 5 trận cập nhật trong
+vòng vài giờ sau trận đấu, thay vì đợi tới bảy ngày.
+
+### Vì sao lịch chạy là 4 lần/ngày
+
+Hai loại dữ liệu có ràng buộc quota hoàn toàn khác nhau, nên tách riêng thay
+vì lấy nhịp chậm nhất làm chuẩn cho cả hai:
+
+- **Kết quả trận** — football-data.org giới hạn 10 request/*phút*, không giới
+  hạn theo ngày. Chạy bao nhiêu cũng được.
+- **Kèo** — The Odds API 500 lượt/*tháng*, mỗi giải tốn 2 lượt (1X2 + tài/xỉu).
+
+Lịch chạy đặt theo nhu cầu của kết quả (4 lần/ngày), còn phần kèo tự hãm bằng
+cache 11 tiếng trong `odds_live.py` nên mỗi ngày chỉ thực sự gọi khoảng 2 lần:
+3 giải × 2 thị trường × 2 lần × 30 ngày = **360 lượt/tháng**, an toàn trong
+trần 500.
+
+---
+
+## Champions League — mô hình phân tầng
+
+C1 không dùng được mô hình một giải: mỗi CLB chỉ đá ~8 trận vòng bảng mỗi mùa,
+quá ít để ước lượng sức mạnh. Nhưng gộp thẳng nhiều giải vào một mô hình lại
+cho kết quả sai — thử lần đầu, mô hình xếp **Celtic hạng 7 châu Âu, trên cả
+Manchester City**. Lý do: Celtic đá 38 trận thắng đậm ở Scotland và chỉ 8 trận
+C1, nên hàm hợp lý bị phần quốc nội áp đảo, mà mô hình lại không có cách nào
+biết giải Scotland yếu hơn.
+
+Lời giải là tách sức mạnh thành hai tầng:
+
+```
+sức_mạnh_thật[i] = atk[i] + league_atk[giải_của_i]
+```
+
+- `atk[i]` là sức mạnh **trong giải**, chuẩn hoá tổng bằng 0 ở từng giải.
+  Xác định rất chắc nhờ hàng trăm trận quốc nội.
+- `league_atk[L]` là **mặt bằng cả giải**. Các trận trong cùng một giải hoàn
+  toàn không mang thông tin về đại lượng này (nó triệt tiêu giữa hai đội cùng
+  giải), nên nó chỉ được xác định bởi **các trận C1 đóng vai trò cầu nối**.
+
+Kết quả sau khi sửa: Celtic rơi từ hạng 7 xuống **hạng 55**, Olympiakos 8→24,
+Galatasaray 12→40. Top đầu thành Arsenal, PSG, Manchester City, Bayern — hợp lý.
+
+Mặt bằng giải mô hình tự học ra (cao = mạnh):
+
+| giải | mức | | giải | mức |
+|---|---|---|---|---|
+| Ngoại hạng Anh | +0.79 | | Bồ Đào Nha | −0.21 |
+| Ligue 1 | +0.59 | | Bỉ | −0.24 |
+| La Liga | +0.34 | | Thổ Nhĩ Kỳ | −0.27 |
+| Bundesliga | +0.26 | | Hà Lan | −0.33 |
+| Serie A | +0.08 | | Scotland | −0.44 |
+| Hy Lạp | 0.00 | | Áo | −0.52 |
+
+Dữ liệu: 9.514 trận từ 12 giải quốc nội, với 378 trận C1 hai mùa gần nhất làm
+cầu nối. Mô hình có ~580 tham số nên cần `max_iter=8000` mới hội tụ thật.
+
+### Độ tin cậy phân biệt được hai tình huống
+
+Cách tính ngây thơ gộp làm một hai trường hợp rất khác nhau:
+
+- **Viking FK** — không có dữ liệu quốc nội nào (openfootball không có giải
+  Na Uy). Mô hình mặc định coi là "trung bình châu Âu", gần như chắc chắn quá
+  cao. Đánh dấu **thấp**, và pipeline in cảnh báo tên CLB ra log.
+- **Porto** — 106 trận quốc nội nhưng 0 trận C1 hai mùa qua. Vị trí trên thang
+  châu Âu vẫn suy được từ mặt bằng giải Bồ Đào Nha, vốn đã hiệu chỉnh nhờ
+  Sporting và Benfica (44 trận cầu nối). Đánh dấu **trung bình**, không phải thấp.
+
+---
+
+## Kết hợp kèo nhà cái
+
+Kèo đóng cửa được xử lý qua ba bước:
+
+**1. Khử biên nhà cái.** Kèo luôn cộng biên lợi nhuận nên tổng nghịch đảo tỷ lệ
+lớn hơn 1. Có hai cách khử: chia đều theo tỷ lệ, và phương pháp Shin (mô hình
+hoá biên như hệ quả của người đặt cược có thông tin nội bộ). Shin nâng cửa trên
+và hạ cửa dưới ở các trận chênh lệch lớn — đúng phần thiên lệch cần sửa.
+
+**2. Ép mô hình khớp 1X2 thị trường.** Kèo chỉ cho ba con số, nhưng app còn cần
+tỷ số chính xác, tài/xỉu, BTTS. Nên thay vì lấy 1X2 từ kèo và phần còn lại từ
+mô hình (sẽ mâu thuẫn nhau), pipeline giải ngược ra cặp (λ, μ) tạo đúng 1X2 đó,
+rồi suy mọi thị trường từ ma trận đã hiệu chỉnh. Sai số khớp ở mức chính xác máy.
+
+**2b. Ghim luôn tổng bàn.** Chỉ khớp 1X2 là chưa đủ: nó ràng buộc *hiệu số*
+bàn thắng, nhưng hai cặp (λ, μ) rất khác nhau như (2.4, 0.9) và (1.6, 0.4) có
+thể cho cùng xác suất thắng/hoà/thua mà phân phối tỷ số khác hẳn. Nên pipeline
+lấy thêm kèo tài/xỉu và giải **ba ẩn (λ, μ, rho)** khớp cả 1X2 lẫn tổng bàn.
+
+Khác biệt không nhỏ. Chelsea gặp Hull City, thị trường định giá tài 2.5 là
+66.6%:
+
+| | tài 2.5 mô hình cho | ba tỷ số hàng đầu |
+|---|---|---|
+| chỉ khớp 1X2 | 56.3% (lệch **−10.3 điểm**) | 2-0, 1-0, 3-0 |
+| khớp cả tổng bàn | 66.6% (lệch 0.0) | 2-0, 3-0, 2-1 |
+
+Bản hai ẩn cho toàn tỷ số sạch lưới và tổng bàn thấp giả tạo. Sai số của bản
+ba ẩn ở mức 10⁻⁸.
+
+**3. So lệch.** Xác suất **thuần mô hình** đem so với kèo để tìm chỗ hai bên bất
+đồng. Phải dùng bản thuần, không dùng bản đã hợp nhất — hợp nhất kéo ước lượng
+về phía thị trường nên tự triệt tiêu chính chênh lệch đang muốn tìm.
+
+### Kết quả kiểm định — và một kết luận không như mong đợi
+
+2.270 trận Ngoại hạng Anh + La Liga, kèo đóng cửa Pinnacle:
+
+| | RPS ↓ | Chính xác ↑ |
+|---|---|---|
+| **Thị trường thuần** | **0.19147** | **54.9%** |
+| Hợp nhất w=0.9 | 0.19172 | 54.9% |
+| Hợp nhất w=0.8 | 0.19208 | 54.8% |
+| Mô hình thuần | 0.19912 | 51.2% |
+
+**Trọng số tối ưu là w = 1.0, tức thị trường thuần.** Trộn thêm mô hình vào làm
+dự báo *tệ đi*, và bootstrap theo cặp xác nhận chênh lệch này có ý nghĩa thống
+kê (KTC 95% không chứa 0), chứ không phải nhiễu mẫu.
+
+Nói cách khác: mô hình không mang thêm thông tin nào mà giá thị trường chưa có.
+Đây là kết quả đã được ghi nhận nhiều trong nghiên cứu — kèo đóng cửa cực kỳ
+hiệu quả vì nó gói cả tin đội hình phút chót mà mô hình không thể biết.
+
+**Vì thế app dùng thị trường làm con số chính khi có kèo** (54.9% so với 51.2%
+là cải thiện đáng kể), còn mô hình giữ ba vai trò riêng mà kèo không làm được:
+giải thích *vì sao* (bàn thắng kỳ vọng, sức mạnh đội hình, ca vắng mặt), dự đoán
+các trận không có kèo, và chỉ ra chỗ bất đồng.
+
+Chạy lại:
+
+```bash
+.venv/bin/python pipeline/blend_backtest.py --leagues premier-league la-liga --test-start 2023-08-01
+```
+
+### Nói thẳng về giới hạn
+
+- Mô hình **không đánh bại được nhà cái** một cách hệ thống. Kèo đóng cửa
+  thường đạt RPS khoảng 0.185–0.190, tốt hơn con số 0.2069 ở trên. Kèo gói
+  cả thông tin nội bộ mà mô hình không thể biết.
+- Độ chính xác 50% nghĩa là **sai một nửa số lần**. Bóng đá có phương sai rất
+  lớn và điều đó không thể khắc phục bằng mô hình tốt hơn.
+- Giá trị thật của app là phân tích có cấu trúc và chỉ ra chỗ mô hình lệch
+  thị trường — không phải công cụ kiếm tiền.
+
+---
+
+## Triển khai miễn phí
+
+1. Đẩy repo lên GitHub.
+2. Vào Cloudflare Pages → Connect to Git → chọn repo.
+   - Build command: *(để trống)*
+   - Build output directory: `public`
+3. Trong GitHub → Settings → Secrets and variables → Actions, thêm key:
+   `ODDS_API_KEY` (quan trọng nhất), `FOOTBALL_DATA_ORG_KEY`, `API_FOOTBALL_KEY`.
+
+   Đừng bao giờ đưa key vào file được commit. `.env` đã nằm trong `.gitignore`;
+   trên CI thì key đến từ Secrets và `config.py` ưu tiên biến môi trường sẵn có
+   nên không cần `.env`.
+
+GitHub Actions sẽ tự cập nhật dữ liệu 3 lần mỗi ngày và commit vào repo,
+Cloudflare Pages tự triển khai lại.
+
+Trên điện thoại, mở link rồi chọn **Thêm vào màn hình chính** để dùng như
+app thật, có biểu tượng riêng và xem được offline.
+
+**Chi phí thật sự: 0 đồng.** Cloudflare Pages miễn phí không giới hạn băng
+thông; GitHub Actions miễn phí 2.000 phút/tháng (pipeline dùng khoảng 30
+phút/tháng).
+
+---
+
+## Cấu trúc dự án
+
+```
+pipeline/
+  build.py               điều phối: nạp dữ liệu -> khớp mô hình -> ghi JSON
+  backtest.py            kiểm định cuốn chiếu và dò tham số
+  model/
+    dixon_coles.py       mô hình lõi
+    adjustments.py       hiệu chỉnh chấn thương / nghỉ ngơi / động lực
+    markets.py           ma trận tỷ số -> 1X2, tài xỉu, BTTS
+    evaluate.py          RPS, Brier, log-loss, hiệu chuẩn
+    predictor.py         gộp thành một dự đoán hoàn chỉnh
+  model/
+    cross_league.py      mô hình phân tầng cho Champions League
+  sources/
+    openfootball.py      kết quả và lịch 12 giải (không cần key)
+    football_data_org.py lịch, kết quả và BXH Champions League
+    european.py          gộp dữ liệu quốc nội + C1 làm cầu nối
+    odds_history.py      kèo đóng cửa lịch sử + ghép tên CLB
+    odds_live.py         kèo trận sắp tới (The Odds API)
+    historical.py        football-data.co.uk (nguồn gốc, hay sập)
+public/                  PWA — HTML/CSS/JS thuần, không cần build
+  data/                  JSON do pipeline sinh ra
+```
+
+---
+
+## Bước tự kiểm tra
+
+`pipeline/selfcheck.py` chạy sau mỗi lần build và chặn việc xuất bản nếu có lỗi:
+
+- **Hàm JavaScript bắt buộc** — 23 hàm phải tồn tại trong `app.js`
+- **JSON đúng chuẩn** — từ chối cả `NaN` và `Infinity`, thứ mà `json.load` của
+  Python vẫn đọc được nhưng trình duyệt thì không
+- **Dự đoán đủ trường** — và xác suất 1X2 phải cộng lại bằng 1
+
+Lý do có bước này rất cụ thể: hai lần liên tiếp tôi sửa `app.js` bằng cắt ghép
+theo vị trí chuỗi và vô tình xoá mất cả hàm — lần đầu mất `matchCard` và
+`renderFixtures`, lần sau mất `marketSection`. Không lần nào bị phát hiện lúc
+build; cả hai lần đều do người dùng bấm vào app rồi báo hỏng.
+
+Bộ kiểm tra thoát với mã 1 khi có lỗi, nên GitHub Actions cũng dừng thay vì
+đẩy bản hỏng lên.
+
+```bash
+.venv/bin/python pipeline/selfcheck.py
+```
+
+---
+
+## Ba lỗi âm thầm đã tìm ra khi chạy thật
+
+Cả ba đều không báo lỗi ở đâu cả — chúng chỉ làm app sai một cách lặng lẽ.
+
+**1. Kết quả không bao giờ cập nhật.** Có **hai** nguyên nhân chồng lên nhau,
+và sửa cái thứ nhất không đủ.
+
+*Nguyên nhân gần:* cache openfootball không có hạn dùng, nên mùa đang diễn ra
+tải một lần rồi giữ mãi. Nay mùa đã kết thúc thì cache vĩnh viễn (kết quả
+không đổi được nữa), mùa đang diễn ra có hạn 3 giờ.
+
+*Nguyên nhân gốc:* **bản thân openfootball chỉ cập nhật khoảng một lần mỗi
+tuần** — lịch sử commit ghi rõ "auto-update week 36", "week 35". Ngày 7/9 mà
+kết quả mới nhất vẫn là 31/8, toàn bộ vòng đấu cuối tuần chưa có. Chạy pipeline
+dày hơn cũng vô ích vì nguồn chưa có dữ liệu.
+
+**2. Tab La Liga trắng trơn.** Phần lớn trận La Liga không có giờ thi đấu, nên
+trường `time` là `NaN`. Python ghi thẳng `NaN` vào JSON — hợp lệ với Python
+nhưng **không hợp lệ với JSON**, và `JSON.parse` của trình duyệt từ chối cả
+file. Ngoại hạng Anh không dính vì trận nào cũng có giờ. Nay mọi NaN được dọn
+thành `null`, và `allow_nan=False` biến lỗi tương lai thành lỗi ồn ào lúc build.
+
+**3. Bản cập nhật mã không tới được người dùng.** Service worker trả bản cache
+rồi tải bản mới ở nền — nhưng thiếu `event.waitUntil()` nên trình duyệt tắt
+worker trước khi ghi xong, và lệnh fetch nền lại lấy từ HTTP cache nên ghi đè
+bằng chính bản cũ. Nhãn tab vẫn hiện tên cũ sau ba lần tải lại. Nay có
+`waitUntil` cộng `cache: "no-cache"` ở lúc làm mới và `cache: "reload"` ở lúc
+cài đặt.
+
+---
+
+## Còn thiếu gì
+
+- **V-League và giải châu Á** — API-Football có phủ, nhưng dữ liệu chấn
+  thương và đội hình rất mỏng. Cần kiểm tra endpoint `coverage` của từng giải
+  trước khi thêm.
+- **Sabah FK, Viking FK** — hai CLB dự C1 từ giải openfootball không có
+  (Azerbaijan, Na Uy). Cần thêm nguồn quốc nội cho họ, hoặc chấp nhận nhãn
+  tin cậy thấp.
+- **xG** — Understat chỉ có 5 giải hàng đầu châu Âu, phải scrape. Dùng xG
+  thay bàn thắng thường cho ước lượng ổn định hơn.
+- **Kèo trận sắp tới** — đã viết xong client The Odds API, chỉ cần key miễn phí
+  để bật.
+- **Chấn thương tự động** — không có nguồn miễn phí nào cho mùa hiện tại
+  (xem mục dưới). Hiện nhập tay qua `data/absences.json`.

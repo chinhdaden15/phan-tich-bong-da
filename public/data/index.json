@@ -1,0 +1,56 @@
+{
+  "generated_at": "2026-09-07T04:14:24+00:00",
+  "leagues": [
+    {
+      "id": "premier-league",
+      "name": "Ngoại hạng Anh",
+      "season": 2026,
+      "fixtures": 20,
+      "teams": 20
+    },
+    {
+      "id": "la-liga",
+      "name": "La Liga",
+      "season": 2026,
+      "fixtures": 31,
+      "teams": 20
+    },
+    {
+      "id": "champions-league",
+      "name": "Champions League",
+      "season": 2026,
+      "fixtures": 18,
+      "teams": 0
+    }
+  ],
+  "model": {
+    "type": "dixon-coles",
+    "xi": 0.0018,
+    "ridge": 2.0
+  },
+  "sources": {
+    "odds_api": {
+      "configured": true,
+      "purpose": "kèo trận sắp tới"
+    },
+    "football_data_org": {
+      "configured": true,
+      "purpose": "lịch và kết quả Champions League"
+    },
+    "api_football": {
+      "configured": true,
+      "purpose": "chấn thương và đội hình ra sân",
+      "blocked": true,
+      "reason": "Gói Free chỉ cho phép mùa 2022-2024, chặn mùa hiện tại"
+    },
+    "openfootball": {
+      "configured": true,
+      "purpose": "kết quả và lịch, không cần key"
+    }
+  },
+  "absences": {
+    "leagues": 0,
+    "teams": 0,
+    "players": 0
+  }
+}
