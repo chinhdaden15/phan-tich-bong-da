@@ -1,5 +1,7 @@
 # Tuyệt đối không đẩy key lên
 .env
+.env.local
+.vercel/
 
 # Không cần cho trang tĩnh
 .venv/
