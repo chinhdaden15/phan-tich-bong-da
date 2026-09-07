@@ -25,7 +25,6 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import absences as absences_mod
 import selfcheck
 from config import describe_keys, load_env
 from model.adjustments import MatchContext
@@ -223,7 +222,6 @@ def build_league(league: str, no_remote: bool = False) -> dict:
 
     rests = rest_days_map(results, window)
     base_rates = compute_base_rates(results)
-    away_list = absences_mod.load()
 
     # Tiến độ mùa giải, dùng cho hệ số động lực.
     played = len(results[results["season"] == CURRENT_SEASON])
@@ -251,10 +249,11 @@ def build_league(league: str, no_remote: bool = False) -> dict:
             away_position=position.get(f["away_team"]),
             total_teams=total_teams,
             season_progress=season_progress,
-            # Chấn thương nhập tay từ data/absences.json — không có nguồn
-            # miễn phí nào cho mùa hiện tại (xem pipeline/absences.py).
-            home_missing=absences_mod.for_team(away_list, league, f["home_team"]),
-            away_missing=absences_mod.for_team(away_list, league, f["away_team"]),
+            # Không có nguồn dữ liệu chấn thương miễn phí nào cho mùa hiện
+            # tại, nên hai danh sách này luôn rỗng. Lớp xử lý trong
+            # adjustments.py vẫn giữ nguyên, sẵn sàng dùng nếu sau này có nguồn.
+            home_missing=[],
+            away_missing=[],
         )
         pred = predict_match(fit, f["home_team"], f["away_team"], context)
         pred["fixture"] = {
@@ -623,15 +622,8 @@ def write_index(out_dir: Path, built: list[dict]) -> None:
             "odds_api": {"configured": keys["ODDS_API_KEY"], "purpose": "kèo trận sắp tới"},
             "football_data_org": {"configured": keys["FOOTBALL_DATA_ORG_KEY"],
                                   "purpose": "lịch và kết quả Champions League"},
-            "api_football": {
-                "configured": keys["API_FOOTBALL_KEY"],
-                "purpose": "chấn thương và đội hình ra sân",
-                "blocked": True,
-                "reason": "Gói Free chỉ cho phép mùa 2022-2024, chặn mùa hiện tại",
-            },
             "openfootball": {"configured": True, "purpose": "kết quả và lịch, không cần key"},
         },
-        "absences": absences_mod.summary(absences_mod.load()),
     }, indent=2)
 
 
@@ -650,10 +642,6 @@ def main() -> None:
     print("Key khả dụng: " + ", ".join(
         f"{k}={'có' if v else 'không'}" for k, v in status.items()
     ))
-    absence_summary = absences_mod.summary(absences_mod.load())
-    if absence_summary["players"]:
-        print(f"Ca vắng mặt nhập tay: {absence_summary['players']} cầu thủ "
-              f"/ {absence_summary['teams']} đội")
     print()
 
     out_dir = Path(args.out)

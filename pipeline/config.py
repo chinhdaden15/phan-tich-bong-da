@@ -52,5 +52,5 @@ def describe_keys() -> dict[str, bool]:
     """Cho biết key nào đã có, dùng để in trạng thái mà không lộ giá trị."""
     return {
         name: bool(os.environ.get(name, "").strip())
-        for name in ("ODDS_API_KEY", "FOOTBALL_DATA_ORG_KEY", "API_FOOTBALL_KEY")
+        for name in ("ODDS_API_KEY", "FOOTBALL_DATA_ORG_KEY")
     }

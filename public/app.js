@@ -334,7 +334,7 @@ function marketSection(p) {
       <strong>${best.offered_odds}</strong> chỉ hàm ý <strong>${pct1(best.market_prob)}</strong>.
       <br><br>Lưu ý quan trọng: trên 2.270 trận đã kiểm định, khi hai bên bất đồng thì
       <em>thị trường thường đúng hơn</em>. Chênh lệch kiểu này hay là dấu hiệu mô hình
-      đang thiếu thông tin (chấn thương, xoay tua đội hình) chứ không phải nhà cái ra giá sai.</div>` : ""}
+      đang thiếu thông tin (xoay tua đội hình, thông tin phút chót) chứ không phải nhà cái ra giá sai.</div>` : ""}
   `;
 }
 
@@ -371,8 +371,8 @@ function openSheet(p) {
 
   const adjSection = adjRows.length
     ? `<div class="section-label">Hiệu chỉnh bối cảnh</div>${adjRows.join("")}
-       <div class="note">Hiệu chỉnh gồm ngày nghỉ và động lực theo vị trí trên bảng xếp hạng.
-       Dữ liệu chấn thương cần API-Football và chưa được bật.</div>`
+       <div class="note">Hiệu chỉnh gồm ngày nghỉ và động lực theo vị trí
+       trên bảng xếp hạng.</div>`
     : "";
 
   el("sheetBody").innerHTML = `
@@ -536,7 +536,6 @@ async function renderAbout() {
   const built = new Date(index.generated_at);
   const ageHours = (Date.now() - built.getTime()) / 3600000;
   const src = index.sources || {};
-  const abs = index.absences || {};
 
   const freshness = ageHours < 14
     ? { label: "mới", cls: "cao" }
@@ -573,14 +572,9 @@ async function renderAbout() {
         ${sourceRow("openfootball", "openfootball")}
         ${sourceRow("odds_api", "The Odds API")}
         ${sourceRow("football_data_org", "football-data.org")}
-        ${sourceRow("api_football", "API-Football")}
       </div>
     </div>
 
-    ${src.api_football?.blocked ? `<div class="note">
-      <strong>API-Football đang bị chặn.</strong> ${escapeHtml(src.api_football.reason)}.
-      Vì vậy dữ liệu chấn thương tự động hiện không có — không phải do thiếu key.
-    </div>` : ""}
 
     <div class="card"><div class="card-title">API key đặt ở đâu</div>
       <div class="prose" style="padding:12px 14px">
@@ -598,18 +592,6 @@ async function renderAbout() {
         </ul>
 
         <p>Sau khi đổi key, chạy lại <code>python pipeline/build.py</code> rồi tải lại trang.</p>
-      </div>
-    </div>
-
-    <div class="card"><div class="card-title">Ca vắng mặt</div>
-      <div class="prose" style="padding:12px 14px">
-        <div class="kv"><span>Đang khai báo</span>
-          <b>${abs.players || 0} cầu thủ / ${abs.teams || 0} đội</b></div>
-        <p style="margin-top:10px">Không có nguồn miễn phí nào cho chấn thương mùa hiện tại,
-        nên phần này nhập tay trong <code>data/absences.json</code>. Bạn theo dõi bóng đá
-        thường xuyên nên biết ai vắng nhanh hơn API.</p>
-        <p>Chỉ cần thêm vài cái tên cho trận quan trọng — mô hình sẽ hạ sức tấn công
-        và phòng ngự của đội đó theo vị trí và mức quan trọng bạn ghi.</p>
       </div>
     </div>
 

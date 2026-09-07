@@ -48,14 +48,12 @@ Tổng dung lượng dữ liệu: khoảng 160 KB cho 2 giải.
 | Nguồn | Dùng cho | Cần key | Giới hạn |
 |---|---|---|---|
 | **openfootball** | Kết quả lịch sử, lịch thi đấu (12 giải) | Không | Không |
-| **football-data.org** | Champions League | Có (miễn phí) | 10 req/phút, 12 giải |
-| **API-Football** | ~~Chấn thương, đội hình~~ | Có (miễn phí) | **gói Free chặn mùa hiện tại** |
+| **football-data.org** | Champions League + kết quả mới các giải | Có (miễn phí) | 10 req/phút, 12 giải |
 | **The Odds API** | Kèo trận sắp tới | Có (miễn phí) | 500 lượt/tháng |
 | **mirror football-data** | Kèo đóng cửa lịch sử | Không | Không |
 
 Đăng ký key miễn phí (tuỳ chọn):
 - football-data.org — https://www.football-data.org/client/register
-- API-Football — https://dashboard.api-football.com/register
 - The Odds API — https://the-odds-api.com/
 
 Copy `.env.example` thành `.env` rồi điền key vào.
@@ -103,45 +101,19 @@ lưới. Có co ngót, con số đó về mức hợp lý.
 
 ### Lớp hiệu chỉnh bối cảnh
 
-Nhân vào λ và μ, gồm chấn thương/vắng mặt, ngày nghỉ, và động lực theo vị trí
-trên bảng xếp hạng ở giai đoạn cuối mùa.
+Nhân vào λ và μ. Hiện đang hoạt động: **ngày nghỉ** giữa hai trận, và **động
+lực** theo vị trí trên bảng xếp hạng ở giai đoạn cuối mùa.
+
+Lớp này còn hỗ trợ tính cả cầu thủ vắng mặt (theo vị trí, số phút thường đá và
+mức quan trọng, có bão hoà mềm để một ca vắng mặt không làm lệch dự đoán quá
+mức), nhưng **đầu vào đó hiện không được dùng**: không có nguồn dữ liệu chấn
+thương miễn phí nào cho mùa đang diễn ra. Mã được giữ nguyên trong
+`model/adjustments.py`, sẵn sàng nối lại nếu sau này có nguồn.
 
 Các hệ số Dixon-Coles được **ước lượng từ dữ liệu**. Các hệ số hiệu chỉnh thì
-**không** — chúng là suy đoán có cơ sở, đặt ở mức dè dặt, vì chưa có dữ liệu
-chấn thương lịch sử miễn phí đủ dài để khớp. Mọi hiệu chỉnh đều bị bão hoà
-mềm để một ca chấn thương không thể làm lệch dự đoán quá mức, và app luôn
-hiển thị đóng góp của từng yếu tố.
-
----
-
-## Chấn thương: vì sao phải nhập tay
-
-Đây là phần duy nhất trong dự án không tự động hoá được. Đã thử và loại cả ba
-nguồn:
-
-| nguồn | kết quả |
-|---|---|
-| API-Football (gói Free) | `"Free plans do not have access to this season, try from 2022 to 2024"` |
-| ESPN (endpoint ẩn) | Trả HTTP 200 nhưng **0 đội, 0 ca** cho mùa 2026 |
-| Transfermarkt | Phải scrape, vùng xám điều khoản, dễ vỡ |
-
-Lớp hiệu chỉnh trong `model/adjustments.py` đã sẵn sàng từ đầu — chỉ thiếu đầu
-vào. Nên đầu vào chuyển thành `data/absences.json`, người dùng tự điền:
-
-```json
-{
-  "premier-league": {
-    "Manchester City FC": [
-      {"name": "Rodri", "position": "Midfielder",
-       "minutes_share": 0.85, "importance": 1.8, "reason": "chấn thương"}
-    ]
-  }
-}
-```
-
-Người theo dõi bóng đá thường xuyên biết ai vắng nhanh hơn bất kỳ API nào.
-Mọi bản ghi đều được kiểm tra định dạng khi nạp; sai thì bỏ qua kèm cảnh báo,
-không để giá trị lạ lọt vào mô hình.
+**không** — chúng là suy đoán có cơ sở, đặt ở mức dè dặt. Mọi hiệu chỉnh đều
+bị chặn biên độ, và app luôn hiển thị đóng góp của từng yếu tố thay vì đưa ra
+một con số duy nhất không giải thích được.
 
 ---
 
@@ -436,7 +408,7 @@ pipeline/
   backtest.py            kiểm định cuốn chiếu và dò tham số
   model/
     dixon_coles.py       mô hình lõi
-    adjustments.py       hiệu chỉnh chấn thương / nghỉ ngơi / động lực
+    adjustments.py       hiệu chỉnh ngày nghỉ / động lực (và vắng mặt, chưa dùng)
     markets.py           ma trận tỷ số -> 1X2, tài xỉu, BTTS
     evaluate.py          RPS, Brier, log-loss, hiệu chuẩn
     predictor.py         gộp thành một dự đoán hoàn chỉnh
@@ -509,11 +481,36 @@ cài đặt.
 
 ---
 
+## V-League: vì sao không có trong app
+
+Đã thử sáu nguồn, không nguồn nào đủ dùng:
+
+| nguồn | kết quả |
+|---|---|
+| openfootball | Không có Việt Nam |
+| The Odds API | Không có V-League (chỉ J-League, K-League, Trung Quốc, Úc) |
+| football-data.org | Gói free chỉ 12 giải châu Âu |
+| ESPN (endpoint ẩn) | HTTP 400, không có giải Việt Nam |
+| Wikipedia | Có bài mùa 2026–27 nhưng bảng dữ liệu còn trống |
+| API-Football | Gói Free chỉ cho mùa 2023-24, chặn 2025/2026/2027 |
+
+Rào cản không nằm ở lịch thi đấu — trang VPF hoàn toàn scrape được. Rào cản là
+**dữ liệu lịch sử để mô hình học**: thứ duy nhất lấy được là 183 trận từ
+10/2023 đến 07/2024 với 15 đội, trong khi mùa hiện tại đã có Bắc Ninh, PVF-CAND,
+Ninh Bình — những CLB không hề có trong tập đó.
+
+Dựng mô hình trên nền ấy sẽ cho ra các con số trông đáng tin nhưng không có cơ
+sở. Đúng loại lỗi âm thầm mà toàn bộ dự án này được thiết kế để tránh, nên
+V-League bị bỏ thay vì làm nửa vời.
+
+Muốn thêm sau này thì cần gói trả phí của API-Football (khoảng 19 USD/tháng),
+hoặc đợi có nguồn mở phủ được giải này.
+
+---
+
 ## Còn thiếu gì
 
-- **V-League và giải châu Á** — API-Football có phủ, nhưng dữ liệu chấn
-  thương và đội hình rất mỏng. Cần kiểm tra endpoint `coverage` của từng giải
-  trước khi thêm.
+- **V-League** — đã khảo sát và quyết định không thêm. Chi tiết ở mục dưới.
 - **Sabah FK, Viking FK** — hai CLB dự C1 từ giải openfootball không có
   (Azerbaijan, Na Uy). Cần thêm nguồn quốc nội cho họ, hoặc chấp nhận nhãn
   tin cậy thấp.
@@ -521,5 +518,6 @@ cài đặt.
   thay bàn thắng thường cho ước lượng ổn định hơn.
 - **Kèo trận sắp tới** — đã viết xong client The Odds API, chỉ cần key miễn phí
   để bật.
-- **Chấn thương tự động** — không có nguồn miễn phí nào cho mùa hiện tại
-  (xem mục dưới). Hiện nhập tay qua `data/absences.json`.
+- **Chấn thương** — không có nguồn miễn phí nào cho mùa hiện tại, nên tính năng
+  này đã gỡ. Lớp xử lý trong `model/adjustments.py` vẫn giữ, sẵn sàng nối lại
+  nếu sau này có nguồn.
