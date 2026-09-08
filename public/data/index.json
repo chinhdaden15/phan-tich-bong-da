@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-08T11:59:48+00:00",
+  "generated_at": "2026-09-08T17:05:30+00:00",
   "leagues": [
     {
       "id": "premier-league",
@@ -19,7 +19,7 @@
       "id": "champions-league",
       "name": "Champions League",
       "season": 2026,
-      "fixtures": 18,
+      "fixtures": 16,
       "teams": 36
     }
   ],
