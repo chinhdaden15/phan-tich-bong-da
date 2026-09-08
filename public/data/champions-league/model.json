@@ -1,15 +1,15 @@
 {
   "xi": 0.0018,
   "ridge": 2.0,
-  "home_advantage": 0.1993,
+  "home_advantage": 0.1991,
   "rho": -0.0434,
-  "trained_on_matches": 9579,
+  "trained_on_matches": 9580,
   "bridge_matches": 378,
   "converged": true,
   "league_levels": {
     "austrian-bundesliga": -0.487,
     "belgian-pro-league": -0.205,
-    "bundesliga": 0.314,
+    "bundesliga": 0.313,
     "eredivisie": -0.291,
     "greek-super-league": -0.418,
     "la-liga": 0.388,
