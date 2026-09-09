@@ -28,7 +28,7 @@ REQUIRED_JS = [
     "localDate", "dayKey", "formatDay", "formatTime", "titleCase", "shortName",
     "loadJSON", "confidenceClass", "signalClass", "signalSection",
     "bestSource", "matchCard", "renderFixtures",
-    "marketSection", "openSheet", "closeSheet",
+    "scorersSection", "marketSection", "openSheet", "closeSheet",
     "renderHistory", "zoneClass", "renderStandings", "renderStrength", "renderAbout",
     "render", "renderLeagueTabs", "init",
 ]

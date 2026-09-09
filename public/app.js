@@ -343,6 +343,77 @@ function marketSection(p) {
   `;
 }
 
+/**
+ * Phần cầu thủ ghi bàn. Có hai chế độ vì dữ liệu đến ở hai thời điểm khác nhau.
+ *
+ * ESPN chỉ công bố đội hình khoảng một tiếng trước giờ bóng lăn, trong khi app
+ * hiển thị lịch tới 14 ngày. Nếu chỉ dựa vào đội hình thì phần lớn thời gian
+ * mục này trống trơn — nên trước đó hiện danh sách theo phong độ ghi bàn, và
+ * ghi rõ đó chưa phải xác suất.
+ */
+function scorersSection(p) {
+  const lu = p.lineup;
+  if (lu?.available) {
+    const blocks = ["home", "away"].map((side) => {
+      const d = lu.sides[side];
+      if (!d) return "";
+      return `
+      <div class="lineup">
+        <div class="lineup-head">${escapeHtml(shortName(d.team))}
+          ${d.formation ? `<span>${escapeHtml(d.formation)}</span>` : ""}</div>
+        <div class="lineup-xi">${d.starters.map((x) =>
+          escapeHtml(x.name.split(" ").slice(-1)[0])).join(" · ")}</div>
+        ${d.scorers?.length ? `<div class="lineup-scorers">
+          ${d.scorers.slice(0, 4).map((x) => `<div class="kv">
+            <span>${escapeHtml(x.player)} <span style="color:var(--text-faint)">${escapeHtml(x.position || "")}</span></span>
+            <b>${pct(x.probability)}</b></div>`).join("")}
+        </div>` : ""}
+      </div>`;
+    }).join("");
+
+    return `
+    <div class="section-label">Đội hình ra sân · xác suất ghi bàn</div>
+    ${blocks}
+    <div class="note"><strong>Ước lượng thô.</strong> Tính từ số bàn của cầu thủ
+      mùa này và mùa trước, cộng mức nền theo vị trí, rồi chuẩn hoá theo bàn
+      thắng kỳ vọng của đội. Kiểm chứng ngược trên trận đã đá: người ghi bàn
+      thật xếp hạng 1 và 2 trên 11. Chỉ tính <strong>11 người đá chính</strong> —
+      cầu thủ vào sân từ ghế dự bị không có trong danh sách.</div>`;
+  }
+
+  const form = p.in_form_scorers;
+  const hasAny = form && ((form.home || []).length || (form.away || []).length);
+  if (!hasAny) return "";
+
+  const block = (side, team) => {
+    const rows = form[side] || [];
+    if (!rows.length) {
+      return `<div class="lineup"><div class="lineup-head">${escapeHtml(shortName(team))}</div>
+        <div class="lineup-xi">Chưa có cầu thủ nào ghi bàn mùa này.</div></div>`;
+    }
+    return `
+    <div class="lineup">
+      <div class="lineup-head">${escapeHtml(shortName(team))}</div>
+      <div class="lineup-scorers">
+        ${rows.map((x) => `<div class="kv">
+          <span>${escapeHtml(x.player)}</span>
+          <b>${x.goals_this_season} bàn
+            <span style="color:var(--text-faint);font-weight:500;font-size:12px">
+              (${x.per_match.toFixed(2)}/trận)</span></b>
+        </div>`).join("")}
+      </div>
+    </div>`;
+  };
+
+  return `
+    <div class="section-label">Cầu thủ đang ghi bàn tốt nhất</div>
+    ${block("home", p.home_team)}
+    ${block("away", p.away_team)}
+    <div class="note"><strong>Đây chưa phải xác suất ghi bàn.</strong> Đội hình ra
+      sân chỉ được công bố khoảng một tiếng trước giờ bóng lăn. Khi có đội hình,
+      mục này tự chuyển thành xác suất tính trên 11 người đá chính.</div>`;
+}
+
 function openSheet(p) {
   const src = bestSource(p);
   const o = src.outcome;
@@ -407,29 +478,7 @@ function openSheet(p) {
     <div class="kv"><span>Xỉu 2.5</span><b>${pct1(ou.under)}</b></div>
     <div class="kv"><span>Cả hai đội ghi bàn</span><b>${pct1(pred.btts.yes)}</b></div>
 
-    ${p.lineup?.available ? `
-    <div class="section-label">Đội hình ra sân</div>
-    ${["home", "away"].map((side) => {
-      const d = p.lineup.sides[side];
-      if (!d) return "";
-      return `
-      <div class="lineup">
-        <div class="lineup-head">${escapeHtml(shortName(d.team))}
-          ${d.formation ? `<span>${escapeHtml(d.formation)}</span>` : ""}</div>
-        <div class="lineup-xi">${d.starters.map((x) =>
-          escapeHtml(x.name.split(" ").slice(-1)[0])).join(" · ")}</div>
-        ${d.scorers?.length ? `<div class="lineup-scorers">
-          ${d.scorers.slice(0, 4).map((x) => `<div class="kv">
-            <span>${escapeHtml(x.player)} <span style="color:var(--text-faint)">${escapeHtml(x.position || "")}</span></span>
-            <b>${pct(x.probability)}</b></div>`).join("")}
-        </div>` : ""}
-      </div>`;
-    }).join("")}
-    <div class="note"><strong>Ước lượng thô.</strong> Xác suất ghi bàn tính từ
-      số bàn của cầu thủ mùa này và mùa trước, cộng mức nền theo vị trí, rồi
-      chuẩn hoá theo bàn thắng kỳ vọng của đội. Kiểm chứng ngược trên hai trận
-      đã đá: người ghi bàn thật xếp hạng 1 và 2 trên 11. Chỉ tính cầu thủ
-      <strong>đá chính</strong> — cầu thủ vào sân từ ghế dự bị không có trong danh sách.</div>` : ""}
+    ${scorersSection(p)}
 
     ${p.first_half ? `
     <div class="section-label">Hiệp 1</div>

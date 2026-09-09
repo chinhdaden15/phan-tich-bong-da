@@ -31,29 +31,48 @@ DATA = ROOT / "public" / "data"
 WINDOW_HOURS_AHEAD = 4.0
 WINDOW_HOURS_BEHIND = 2.0
 
-SCORER_LEAGUES = {"premier-league": "PL", "la-liga": "PD", "champions-league": "CL"}
+SCORER_LEAGUES = {"premier-league": ["PL"], "la-liga": ["PD"]}
+
+# Champions League phải lấy phong độ ghi bàn từ GIẢI QUỐC NỘI của cầu thủ.
+#
+# Lấy từ chính C1 là vô dụng: giải mới đá một vòng nên gần như chưa ai ghi bàn,
+# mọi người rơi hết về mức nền theo vị trí và các cầu thủ cùng vị trí nhận xác
+# suất giống hệt nhau — Deniz Undav bằng đúng Grischa Prömel. Số bàn ở La Liga
+# hay Bundesliga mới nói lên cầu thủ đó nguy hiểm đến đâu.
+CL_SCORER_COMPETITIONS = ["PL", "PD", "SA", "BL1", "FL1", "DED", "PPL", "CL"]
+
 CURRENT_SEASON = 2026
 
 
+def _scorers(code: str, season: int | None = None) -> list[dict]:
+    params = {"limit": 100}
+    if season is not None:
+        params["season"] = season
+    try:
+        return football_data_org._get(
+            f"competitions/{code}/scorers", params,
+            cache_hours=12.0 if season is None else 24 * 7,
+        ).get("scorers", [])
+    except Exception:
+        return []
+
+
 def scoring_rates(league: str) -> dict:
-    """Tỷ lệ ghi bàn của cầu thủ, gộp mùa này và mùa trước."""
-    code = SCORER_LEAGUES.get(league)
-    if not code:
+    """
+    Tỷ lệ ghi bàn của cầu thủ, gộp mùa này và mùa trước.
+
+    Với Champions League thì gộp qua nhiều giải quốc nội, vì cầu thủ dự C1 đến
+    từ khắp châu Âu và số bàn ở giải quốc nội mới là thước đo có ý nghĩa.
+    """
+    codes = (CL_SCORER_COMPETITIONS if league == "champions-league"
+             else SCORER_LEAGUES.get(league, []))
+    if not codes:
         return {}
-    try:
-        current = football_data_org._get(
-            f"competitions/{code}/scorers", {"limit": 100}, cache_hours=12.0
-        ).get("scorers", [])
-    except Exception:
-        current = []
-    try:
-        previous = football_data_org._get(
-            f"competitions/{code}/scorers",
-            {"limit": 100, "season": CURRENT_SEASON - 1},
-            cache_hours=24 * 7,
-        ).get("scorers", [])
-    except Exception:
-        previous = []
+
+    current, previous = [], []
+    for code in codes:
+        current.extend(_scorers(code))
+        previous.extend(_scorers(code, CURRENT_SEASON - 1))
     return player_scoring_rates(current, previous)
 
 

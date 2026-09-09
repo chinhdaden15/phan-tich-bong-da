@@ -254,3 +254,36 @@ def scorers_from_lineup(
 
     out.sort(key=lambda r: r["probability"], reverse=True)
     return out[:limit]
+
+
+def in_form_scorers(
+    rates: dict[str, dict], team_players: dict[str, list[str]], team: str,
+    limit: int = 4,
+) -> list[dict]:
+    """
+    Danh sách cầu thủ đang ghi bàn tốt nhất của một đội, dùng KHI CHƯA CÓ ĐỘI HÌNH.
+
+    Đây KHÔNG phải xác suất ghi bàn — chỉ là phong độ ghi bàn từ đầu mùa. Đội
+    hình chỉ được công bố khoảng một tiếng trước giờ bóng lăn, mà app hiển thị
+    lịch tới 14 ngày, nên phần lớn thời gian sẽ không có gì để xem nếu chỉ dựa
+    vào đội hình.
+
+    Khi đội hình về, refresh_lineups.py thay danh sách này bằng bản có xác suất
+    thật tính trên 11 người đá chính.
+    """
+    names = team_players.get(team) or []
+    rows = []
+    for name in names:
+        record = rates.get(name)
+        if not record or record["matches"] <= 0:
+            continue
+        rows.append({
+            "player": name,
+            "goals": round(record["goals"], 1),
+            "matches": int(record["matches"]),
+            "per_match": round(record["goals"] / record["matches"], 3),
+            "goals_this_season": record.get("goals_current", 0),
+        })
+
+    rows.sort(key=lambda r: (r["per_match"], r["goals"]), reverse=True)
+    return rows[:limit]

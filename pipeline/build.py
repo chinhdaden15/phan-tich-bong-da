@@ -31,7 +31,8 @@ from config import describe_keys, load_env
 from model.adjustments import MatchContext
 from model.cross_league import fit_cross_league
 from model.dixon_coles import fit_dixon_coles
-from model.extra_markets import first_half_markets, measure_h1_share
+from model.extra_markets import (first_half_markets, in_form_scorers,
+                                 measure_h1_share, player_scoring_rates)
 from model.predictor import (compute_base_rates, european_strength_table,
                             predict_european_match, predict_match,
                             predict_with_market, summarise_signal,
@@ -246,6 +247,10 @@ def build_league(league: str, no_remote: bool = False) -> dict:
     h1_share, h1_n = measure_h1_share(h1_payloads)
     print(f"  hiệp 1: {h1_share:.1%} tổng bàn (đo trên {h1_n} trận)")
 
+    scorer_rates, team_players = load_scorers(league)
+    if scorer_rates:
+        print(f"  phong độ ghi bàn: {len(scorer_rates)} cầu thủ / {len(team_players)} đội")
+
     # Tiến độ mùa giải, dùng cho hệ số động lực.
     played = len(results[results["season"] == CURRENT_SEASON])
     total_expected = total_teams * (total_teams - 1) if total_teams > 1 else 1
@@ -289,10 +294,20 @@ def build_league(league: str, no_remote: bool = False) -> dict:
             "league": league,
         }
         pred["head_to_head"] = head_to_head(results, f["home_team"], f["away_team"])
+        # Cầu thủ đang có phong độ ghi bàn tốt nhất. Hiện ngay từ khi có lịch,
+        # trong khi phần xác suất thật phải đợi đội hình ra sân sát giờ đá.
+        pred["in_form_scorers"] = {
+            "home": in_form_scorers(scorer_rates, team_players, f["home_team"]),
+            "away": in_form_scorers(scorer_rates, team_players, f["away_team"]),
+        }
         # Kèo hiệp 1 suy từ bàn thắng kỳ vọng cả trận. Dùng số đã hiệu chỉnh
         # theo kèo nếu có, vì nó chính xác hơn số thuần mô hình.
         _eg = pred["expected_goals"]
         pred["first_half"] = first_half_markets(_eg["home"], _eg["away"], h1_share)
+        pred["in_form_scorers"] = {
+            "home": in_form_scorers(scorer_rates, team_players, f["home_team"]),
+            "away": in_form_scorers(scorer_rates, team_players, f["away_team"]),
+        }
 
         event = odds_index.get((f["home_team"], f["away_team"]))
         pred["market"] = (
@@ -422,6 +437,9 @@ def build_champions_league() -> dict:
                 continue
     h1_share, h1_n = measure_h1_share(h1_payloads)
     print(f"  hiệp 1: {h1_share:.1%} tổng bàn (đo trên {h1_n} trận 5 giải lớn)")
+    scorer_rates, team_players = load_scorers("champions-league")
+    if scorer_rates:
+        print(f"  phong độ ghi bàn: {len(scorer_rates)} cầu thủ / {len(team_players)} đội")
 
     fixtures = european.upcoming_champions_league(CURRENT_SEASON)
     now_utc = datetime.now(timezone.utc)
@@ -561,6 +579,43 @@ def build_champions_league() -> dict:
             },
         },
     }
+
+
+SCORER_COMPETITIONS = {
+    "premier-league": ["PL"],
+    "la-liga": ["PD"],
+    # Cầu thủ dự C1 đến từ khắp châu Âu nên phải gộp nhiều giải quốc nội.
+    "champions-league": ["PL", "PD", "SA", "BL1", "FL1", "DED", "PPL"],
+}
+
+
+def load_scorers(league: str) -> tuple[dict, dict]:
+    """Tỷ lệ ghi bàn của cầu thủ và danh sách cầu thủ theo đội."""
+    codes = SCORER_COMPETITIONS.get(league, [])
+    current, previous = [], []
+    for code in codes:
+        for season, bucket in ((None, current), (CURRENT_SEASON - 1, previous)):
+            params = {"limit": 100}
+            if season is not None:
+                params["season"] = season
+            try:
+                bucket.extend(football_data_org._get(
+                    f"competitions/{code}/scorers", params,
+                    cache_hours=12.0 if season is None else 24 * 7,
+                ).get("scorers", []))
+            except Exception:
+                continue
+
+    rates = player_scoring_rates(current, previous)
+
+    # Đội hiện tại của cầu thủ lấy theo mùa NÀY, vì cầu thủ đổi CLB giữa các mùa.
+    team_players: dict[str, list[str]] = {}
+    for entry in current:
+        player = (entry.get("player") or {}).get("name")
+        team = (entry.get("team") or {}).get("name")
+        if player and team:
+            team_players.setdefault(team, []).append(player)
+    return rates, team_players
 
 
 def _index_odds(events: list[dict], fixtures: pd.DataFrame) -> dict:
