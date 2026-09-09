@@ -1,7 +1,7 @@
 {
   "xi": 0.0018,
   "ridge": 2.0,
-  "home_advantage": 0.3014,
+  "home_advantage": 0.3013,
   "rho": 0.0029,
   "trained_on_matches": 1931,
   "converged": true
