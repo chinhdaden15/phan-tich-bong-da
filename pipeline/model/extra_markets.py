@@ -127,3 +127,130 @@ def _top_score(matrix: np.ndarray) -> dict:
 #
 # Người ghi bàn THỰC TẾ của các trận đã đá thì vẫn có đầy đủ, lấy từ ESPN —
 # xem sources/espn.py và phần lịch sử.
+
+
+
+# Trọng số của mùa trước so với mùa này khi tính tỷ lệ ghi bàn của cầu thủ.
+# Thấp hơn 1 vì phong độ và vai trò trong đội thay đổi giữa các mùa.
+PREVIOUS_SEASON_WEIGHT = 0.5
+
+
+def player_scoring_rates(
+    current: list[dict], previous: list[dict] | None = None
+) -> dict[str, dict]:
+    """
+    Số bàn và số trận của từng cầu thủ, gộp mùa này với mùa trước.
+
+    Đầu vào là danh sách từ endpoint scorers của football-data.org. Danh sách
+    này CHỈ có những người đã ghi bàn — người chưa ghi bàn nào sẽ không xuất
+    hiện, và scorers_from_lineup() bù cho họ bằng mức nền theo vị trí.
+    """
+    previous = previous or []
+    rows: dict[str, dict] = {}
+
+    def add(entries, weight):
+        for e in entries:
+            player = (e.get("player") or {}).get("name")
+            goals = e.get("goals")
+            played = e.get("playedMatches")
+            if not player or goals is None or not played:
+                continue
+            row = rows.setdefault(player, {
+                "player": player, "goals": 0.0, "matches": 0.0, "goals_current": 0,
+            })
+            row["goals"] += float(goals) * weight
+            row["matches"] += float(played) * weight
+            if weight == 1.0:
+                row["goals_current"] = int(goals)
+
+    add(current, 1.0)
+    add(previous, PREVIOUS_SEASON_WEIGHT)
+    return rows
+
+
+# --------------------------------------------------------------------------
+# Người ghi bàn — bản dùng ĐỘI HÌNH THẬT
+# --------------------------------------------------------------------------
+#
+# Lần thử trước thất bại vì không biết ai ra sân: phải suy từ danh sách 60 vua
+# phá lưới toàn giải, thiếu hết những người chưa ghi bàn. Có đội hình rồi thì
+# biết chính xác 11 người đá chính và vị trí từng người, nên gán được mức nền
+# theo vị trí cho người chưa có dữ liệu ghi bàn.
+#
+# Vẫn là ƯỚC LƯỢNG THÔ. App phải ghi rõ điều đó.
+
+# Bàn/trận điển hình theo vị trí, dùng làm mức nền cho cầu thủ chưa ghi bàn
+# mùa này. Lấy từ phân bố bàn thắng theo tuyến trong bóng đá hiện đại.
+POSITION_BASE_RATE = {
+    "F": 0.30, "ST": 0.30, "CF": 0.30, "S": 0.30,
+    "W": 0.20, "LW": 0.20, "RW": 0.20,
+    "AM": 0.18, "M": 0.10, "CM": 0.10, "DM": 0.05,
+    "LM": 0.12, "RM": 0.12,
+    "D": 0.04, "CD": 0.04, "LB": 0.04, "RB": 0.04, "WB": 0.05,
+    "G": 0.001,
+}
+DEFAULT_POSITION_RATE = 0.10
+
+# Trọng số của mức nền vị trí so với dữ liệu thật của cầu thủ. Cao thì an toàn
+# hơn nhưng kém phân biệt; 6 "trận ảo" là mức cân bằng.
+POSITION_PRIOR_MATCHES = 6.0
+
+
+def _position_rate(position: str | None) -> float:
+    if not position:
+        return DEFAULT_POSITION_RATE
+    key = str(position).upper().split("-")[0]
+    return POSITION_BASE_RATE.get(key, DEFAULT_POSITION_RATE)
+
+
+def scorers_from_lineup(
+    starters: list[dict], rates: dict[str, dict], team_lambda: float, limit: int = 8,
+) -> list[dict]:
+    """
+    Xác suất ghi bàn của từng cầu thủ ĐÁ CHÍNH.
+
+    Với mỗi người, tỷ lệ ghi bàn là trung bình có trọng số giữa số liệu thật
+    của họ và mức nền theo vị trí. Sau đó chuẩn hoá để tổng kỳ vọng của cả đội
+    khớp đúng bàn thắng kỳ vọng của đội trong trận này — nhờ vậy con số tự
+    điều chỉnh theo đối thủ và không bao giờ cộng lại vượt quá λ của đội.
+    """
+    if not starters or team_lambda <= 0:
+        return []
+
+    rows = []
+    for player in starters:
+        name = player.get("name")
+        if not name:
+            continue
+        base = _position_rate(player.get("position"))
+        record = rates.get(name)
+        if record:
+            goals, matches = record["goals"], record["matches"]
+        else:
+            goals = matches = 0.0
+        # Trung bình có trọng số: dữ liệu thật cộng "trận ảo" ở mức nền vị trí.
+        rate = (goals + base * POSITION_PRIOR_MATCHES) / (matches + POSITION_PRIOR_MATCHES)
+        rows.append({
+            "player": name,
+            "position": player.get("position"),
+            "rate": rate,
+            "goals_this_season": (record or {}).get("goals_current", 0),
+        })
+
+    total = sum(r["rate"] for r in rows)
+    if total <= 0:
+        return []
+
+    out = []
+    for row in rows:
+        expected = team_lambda * (row["rate"] / total)
+        out.append({
+            "player": row["player"],
+            "position": row["position"],
+            "probability": round(1.0 - math.exp(-expected), 4),
+            "expected_goals": round(expected, 4),
+            "goals_this_season": row["goals_this_season"],
+        })
+
+    out.sort(key=lambda r: r["probability"], reverse=True)
+    return out[:limit]

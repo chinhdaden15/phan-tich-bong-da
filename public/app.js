@@ -402,6 +402,30 @@ function openSheet(p) {
     <div class="kv"><span>Xỉu 2.5</span><b>${pct1(ou.under)}</b></div>
     <div class="kv"><span>Cả hai đội ghi bàn</span><b>${pct1(pred.btts.yes)}</b></div>
 
+    ${p.lineup?.available ? `
+    <div class="section-label">Đội hình ra sân</div>
+    ${["home", "away"].map((side) => {
+      const d = p.lineup.sides[side];
+      if (!d) return "";
+      return `
+      <div class="lineup">
+        <div class="lineup-head">${escapeHtml(shortName(d.team))}
+          ${d.formation ? `<span>${escapeHtml(d.formation)}</span>` : ""}</div>
+        <div class="lineup-xi">${d.starters.map((x) =>
+          escapeHtml(x.name.split(" ").slice(-1)[0])).join(" · ")}</div>
+        ${d.scorers?.length ? `<div class="lineup-scorers">
+          ${d.scorers.slice(0, 4).map((x) => `<div class="kv">
+            <span>${escapeHtml(x.player)} <span style="color:var(--text-faint)">${escapeHtml(x.position || "")}</span></span>
+            <b>${pct(x.probability)}</b></div>`).join("")}
+        </div>` : ""}
+      </div>`;
+    }).join("")}
+    <div class="note"><strong>Ước lượng thô.</strong> Xác suất ghi bàn tính từ
+      số bàn của cầu thủ mùa này và mùa trước, cộng mức nền theo vị trí, rồi
+      chuẩn hoá theo bàn thắng kỳ vọng của đội. Kiểm chứng ngược trên hai trận
+      đã đá: người ghi bàn thật xếp hạng 1 và 2 trên 11. Chỉ tính cầu thủ
+      <strong>đá chính</strong> — cầu thủ vào sân từ ghế dự bị không có trong danh sách.</div>` : ""}
+
     ${p.first_half ? `
     <div class="section-label">Hiệp 1</div>
     <div class="kv"><span>Thắng nhà / Hoà / Thắng khách</span>

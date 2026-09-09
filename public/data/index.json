@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-09T03:48:49+00:00",
+  "generated_at": "2026-09-09T04:03:12+00:00",
   "leagues": [
     {
       "id": "premier-league",
@@ -49,7 +49,7 @@
         "matches": 6,
         "top_pick_correct": 5,
         "top_pick_accuracy": 0.8333,
-        "mean_brier": 0.4446,
+        "mean_brier": 0.4447,
         "score_exact": {
           "checked": 6,
           "correct": 1,

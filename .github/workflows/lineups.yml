@@ -1,0 +1,54 @@
+name: Cập nhật đội hình ra sân
+
+# Chạy mỗi giờ. Cần tần suất này vì ESPN chỉ công bố đội hình khoảng MỘT TIẾNG
+# trước giờ bóng lăn — lịch 4 lần/ngày của update-data.yml gần như luôn bỏ lỡ.
+#
+# Công việc này rất nhẹ: không khớp lại mô hình, chỉ đọc predictions.json, hỏi
+# ESPN cho các trận sắp đá, rồi ghi lại. Khoảng 40 giây mỗi lần.
+#   24 lần/ngày × 30 ngày × 0.7 phút ≈ 500 phút/tháng
+#   cộng update-data.yml (~360) vẫn nằm trong hạn 2.000 phút của gói miễn phí.
+on:
+  schedule:
+    - cron: "20 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: lineups
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Cài thư viện
+        run: pip install -r pipeline/requirements.txt
+
+      - name: Lấy đội hình
+        env:
+          FOOTBALL_DATA_ORG_KEY: ${{ secrets.FOOTBALL_DATA_ORG_KEY }}
+        run: python pipeline/refresh_lineups.py
+
+      - name: Commit nếu có đội hình mới
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/data
+          if git diff --staged --quiet; then
+            echo "Chưa có đội hình mới."
+          else
+            git commit -m "chore: đội hình ra sân $(date -u '+%Y-%m-%d %H:%M UTC')"
+            git pull --rebase --strategy-option=theirs
+            git push
+          fi
