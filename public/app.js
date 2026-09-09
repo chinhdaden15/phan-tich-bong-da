@@ -534,8 +534,8 @@ function enableSwipeToClose() {
   const grip = sheet.querySelector(".sheet-grip");
   if (!panel) return;
 
-  const CLOSE_DISTANCE = 110;   // px kéo xuống là đóng
-  const FLICK_SPEED = 0.5;      // px/ms — vẩy nhanh thì đóng dù kéo ngắn
+  const CLOSE_DISTANCE = 90;    // px kéo xuống là đóng
+  const FLICK_SPEED = 0.35;     // px/ms — vẩy nhanh thì đóng dù kéo ngắn
 
   let startY = 0;
   let startAt = 0;
