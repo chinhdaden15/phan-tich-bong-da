@@ -25,16 +25,19 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import history as history_mod
 import selfcheck
 from config import describe_keys, load_env
 from model.adjustments import MatchContext
 from model.cross_league import fit_cross_league
 from model.dixon_coles import fit_dixon_coles
+from model.extra_markets import first_half_markets, measure_h1_share
 from model.predictor import (compute_base_rates, european_strength_table,
                             predict_european_match, predict_match,
                             predict_with_market, summarise_signal,
                             team_strength_table)
-from sources import european, football_data_org, odds_live, openfootball, results as results_src
+from sources import (espn, european, football_data_org, odds_live,
+                     openfootball, results as results_src)
 from sources.odds_history import build_name_map, normalise
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -185,6 +188,16 @@ def build_league(league: str, no_remote: bool = False) -> dict:
     results = results_src.load_with_recent([league], seasons)
     print(f"  lịch sử: {len(results)} trận ({results.date.min().date()} -> {results.date.max().date()})")
 
+    # Lưu lịch sử TRƯỚC khi predictions.json bị ghi đè ở cuối hàm này.
+    # Bỏ qua bước này thì mọi dự đoán đã đưa ra sẽ mất khi trận đá xong.
+    league_dir = OUT_DIR / league
+    espn_details = espn.details_for_dates(league, espn.recent_days(10))
+    archived, newly = history_mod.archive_finished(
+        league, league_dir, results, espn_details=espn_details
+    )
+    if newly:
+        print(f"  lịch sử: +{newly} trận vừa đá xong (tổng {len(archived)})")
+
     fit = fit_dixon_coles(
         results["home_team"], results["away_team"],
         results["home_goals"], results["away_goals"],
@@ -222,6 +235,16 @@ def build_league(league: str, no_remote: bool = False) -> dict:
 
     rests = rest_days_map(results, window)
     base_rates = compute_base_rates(results)
+
+    # Tỷ lệ bàn hiệp 1 đo từ chính giải này, dùng để suy kèo hiệp 1.
+    h1_payloads = []
+    for year in seasons:
+        try:
+            h1_payloads.append(openfootball._load_payload(league, year, True, 30))
+        except Exception:
+            continue
+    h1_share, h1_n = measure_h1_share(h1_payloads)
+    print(f"  hiệp 1: {h1_share:.1%} tổng bàn (đo trên {h1_n} trận)")
 
     # Tiến độ mùa giải, dùng cho hệ số động lực.
     played = len(results[results["season"] == CURRENT_SEASON])
@@ -266,6 +289,10 @@ def build_league(league: str, no_remote: bool = False) -> dict:
             "league": league,
         }
         pred["head_to_head"] = head_to_head(results, f["home_team"], f["away_team"])
+        # Kèo hiệp 1 suy từ bàn thắng kỳ vọng cả trận. Dùng số đã hiệu chỉnh
+        # theo kèo nếu có, vì nó chính xác hơn số thuần mô hình.
+        _eg = pred["expected_goals"]
+        pred["first_half"] = first_half_markets(_eg["home"], _eg["away"], h1_share)
 
         event = odds_index.get((f["home_team"], f["away_team"]))
         pred["market"] = (
@@ -277,6 +304,9 @@ def build_league(league: str, no_remote: bool = False) -> dict:
             )
             if event else {"available": False, "reason": "chưa có kèo"}
         )
+        if (pred.get("market") or {}).get("available"):
+            _mg = pred["market"]["expected_goals"]
+            pred["first_half"] = first_half_markets(_mg["home"], _mg["away"], h1_share)
         pred["signal"] = summarise_signal(pred, base_rates)
         predictions.append(pred)
 
@@ -302,6 +332,8 @@ def build_league(league: str, no_remote: bool = False) -> dict:
         "standings": standings,
         "strength": strength,
         "predictions": predictions,
+        "history": archived,
+        "accuracy": history_mod.accuracy_summary(archived),
         "model": {
             "xi": MODEL_XI,
             "ridge": MODEL_RIDGE,
@@ -332,6 +364,21 @@ def build_champions_league() -> dict:
     print(f"  gộp: {len(pool)} trận ({bridge} trận C1 làm cầu nối), "
           f"{len(set(pool.home_team) | set(pool.away_team))} đội")
 
+    league_dir = OUT_DIR / "champions-league"
+    cl_results = pool[pool["bridge"]][
+        ["date", "home_team", "away_team", "home_goals", "away_goals"]
+    ].copy()
+    cl_results["result"] = cl_results.apply(
+        lambda r: "H" if r.home_goals > r.away_goals
+        else ("A" if r.home_goals < r.away_goals else "D"), axis=1
+    )
+    espn_details = espn.details_for_dates("champions-league", espn.recent_days(10))
+    archived, newly = history_mod.archive_finished(
+        "champions-league", league_dir, cl_results, espn_details=espn_details
+    )
+    if newly:
+        print(f"  lịch sử: +{newly} trận vừa đá xong (tổng {len(archived)})")
+
     fit = fit_cross_league(
         pool["home_team"], pool["away_team"],
         pool["home_goals"], pool["away_goals"],
@@ -347,6 +394,18 @@ def build_champions_league() -> dict:
         fit.leagues, key=lambda l: -(fit.league_attack[l] - fit.league_defence[l])
     )
     print(f"  mặt bằng giải: {levels[0]} mạnh nhất, {levels[-1]} yếu nhất")
+
+    # Tỷ lệ bàn hiệp 1 cho C1: đo trên các giải quốc nội lớn, vì chính các CLB
+    # đó đá Champions League. Bản thân C1 chưa đủ trận trong mùa để tự đo.
+    h1_payloads = []
+    for lg in ("premier-league", "la-liga", "serie-a", "bundesliga", "ligue-1"):
+        for year in range(CURRENT_SEASON - 3, CURRENT_SEASON + 1):
+            try:
+                h1_payloads.append(openfootball._load_payload(lg, year, True, 30))
+            except Exception:
+                continue
+    h1_share, h1_n = measure_h1_share(h1_payloads)
+    print(f"  hiệp 1: {h1_share:.1%} tổng bàn (đo trên {h1_n} trận 5 giải lớn)")
 
     fixtures = european.upcoming_champions_league(CURRENT_SEASON)
     now_utc = datetime.now(timezone.utc)
@@ -403,6 +462,8 @@ def build_champions_league() -> dict:
             "league": "champions-league",
         }
         pred["head_to_head"] = head_to_head(pool, home_key, away_key)
+        _eg = pred["expected_goals"]
+        pred["first_half"] = first_half_markets(_eg["home"], _eg["away"], h1_share)
         if missing:
             # Đội không có dữ liệu nào: mô hình mặc định coi họ là trung bình
             # châu Âu, gần như chắc chắn là đánh giá quá cao. Nói thẳng ra
@@ -420,6 +481,9 @@ def build_champions_league() -> dict:
             )
             if event else {"available": False, "reason": "chưa có kèo"}
         )
+        if (pred.get("market") or {}).get("available"):
+            _mg = pred["market"]["expected_goals"]
+            pred["first_half"] = first_half_markets(_mg["home"], _mg["away"], h1_share)
         pred["signal"] = summarise_signal(pred, base_rates)
         predictions.append(pred)
 
@@ -450,6 +514,8 @@ def build_champions_league() -> dict:
         "standings": standings,
         "strength": strength,
         "predictions": predictions,
+        "history": archived,
+        "accuracy": history_mod.accuracy_summary(archived),
         "model": {
             "xi": MODEL_XI, "ridge": MODEL_RIDGE,
             "home_advantage": round(fit.home_advantage, 4),
@@ -662,8 +728,8 @@ def main() -> None:
 
         league_dir = out_dir / league
         league_dir.mkdir(parents=True, exist_ok=True)
-        for key in ("standings", "strength", "predictions"):
-            dump_json(league_dir / f"{key}.json", payload[key])
+        for key in ("standings", "strength", "predictions", "history"):
+            dump_json(league_dir / f"{key}.json", payload.get(key, []))
         dump_json(league_dir / "model.json", payload["model"], indent=2)
         built.append({
             "id": league,
@@ -671,6 +737,8 @@ def main() -> None:
             "season": payload["season"],
             "fixtures": len(payload["predictions"]),
             "teams": len(payload["standings"]),
+            "history": len(payload.get("history", [])),
+            "accuracy": payload.get("accuracy", {}),
         })
 
     if not built:

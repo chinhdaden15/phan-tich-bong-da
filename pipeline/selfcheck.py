@@ -29,7 +29,7 @@ REQUIRED_JS = [
     "loadJSON", "confidenceClass", "signalClass", "signalSection",
     "bestSource", "matchCard", "renderFixtures",
     "marketSection", "openSheet", "closeSheet",
-    "zoneClass", "renderStandings", "renderStrength", "renderAbout",
+    "renderHistory", "zoneClass", "renderStandings", "renderStrength", "renderAbout",
     "render", "renderLeagueTabs", "init",
 ]
 

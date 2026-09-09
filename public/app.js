@@ -402,6 +402,20 @@ function openSheet(p) {
     <div class="kv"><span>Xỉu 2.5</span><b>${pct1(ou.under)}</b></div>
     <div class="kv"><span>Cả hai đội ghi bàn</span><b>${pct1(pred.btts.yes)}</b></div>
 
+    ${p.first_half ? `
+    <div class="section-label">Hiệp 1</div>
+    <div class="kv"><span>Thắng nhà / Hoà / Thắng khách</span>
+      <b>${pct(p.first_half.outcome.home)} · ${pct(p.first_half.outcome.draw)} · ${pct(p.first_half.outcome.away)}</b></div>
+    <div class="kv"><span>Có bàn trong hiệp 1</span>
+      <b>${pct1(p.first_half.over_under["0.5"].over)}</b></div>
+    <div class="kv"><span>Tài 1.5 hiệp 1</span>
+      <b>${pct1(p.first_half.over_under["1.5"].over)}</b></div>
+    <div class="kv"><span>Bàn kỳ vọng hiệp 1</span>
+      <b>${p.first_half.expected_goals.home.toFixed(2)} – ${p.first_half.expected_goals.away.toFixed(2)}</b></div>
+    <div class="note">Kèo hiệp 1 do mô hình suy ra, không lấy từ nhà cái:
+      ${pct(p.first_half.share_used)} số bàn của giải này được ghi trong hiệp 1.
+      Đã đối chiếu với kèo thật ở một trận mẫu, lệch khoảng 1 điểm phần trăm.</div>` : ""}
+
     <div class="section-label">Ba tỷ số khả dĩ nhất</div>
     <div class="scores scores-3">${scores}</div>
     ${p.market?.available && p.market.calibrated_on?.length > 1
@@ -435,6 +449,96 @@ function openSheet(p) {
 function closeSheet() {
   el("sheet").hidden = true;
   document.body.style.overflow = "";
+}
+
+/* ---------------- Lịch sử ---------------- */
+
+/**
+ * Trang lịch sử: trận đã đá, kết quả thật, người ghi bàn, và dự đoán đã đưa ra.
+ *
+ * Mục đích chính không phải xem lại tỷ số — chỗ nào cũng có — mà để đối chiếu
+ * dự đoán với thực tế. Một app dự đoán không cho xem lại nó đã sai thế nào thì
+ * không có cách nào để tin được.
+ */
+async function renderHistory() {
+  const rows = await loadJSON(`${DATA}/${state.league}/history.json`);
+  if (!rows.length) {
+    view().innerHTML = `<div class="empty">Chưa có trận nào được lưu.<br>
+      <small>Lịch sử bắt đầu tích luỹ từ khi trận đầu tiên đá xong.</small></div>`;
+    return;
+  }
+
+  const graded = rows.filter((r) => r.grade);
+  const correct = graded.filter((r) => r.grade.top_pick_correct).length;
+  const scored = graded.filter((r) => r.grade.score_correct !== null);
+  const scoreHit = scored.filter((r) => r.grade.score_correct).length;
+  const brier = graded.length
+    ? graded.reduce((a, r) => a + r.grade.brier, 0) / graded.length : 0;
+
+  const card = rows.map((r) => {
+    const a = r.actual;
+    const g = r.grade || {};
+    const homeWon = a.home_goals > a.away_goals;
+    const awayWon = a.home_goals < a.away_goals;
+
+    // Ghi rõ tên đội thay vì mũi tên: với trận có 5 bàn của cả hai bên,
+    // ký hiệu ◄ ► buộc người đọc phải dịch trong đầu từng dòng một.
+    const teamTag = (side) => {
+      const name = shortName(side === "home" ? r.home_team : r.away_team);
+      const color = side === "home" ? "var(--home)" : "var(--away)";
+      return `<span style="color:${color};font-size:11px;font-weight:650"> ${escapeHtml(name)}</span>`;
+    };
+
+    const goals = (a.goals || []).length
+      ? `<div class="hist-goals">${a.goals.map((x) => `
+          <div><i>${escapeHtml(x.minute || "")}</i>${escapeHtml(x.scorer || "?")}${teamTag(x.side)}
+            ${x.assist ? `<span style="color:var(--text-faint);font-size:11.5px"> ← ${escapeHtml(x.assist)}</span>` : ""}
+          </div>`).join("")}</div>`
+      : "";
+
+    const pick = g.signal_pick || g.top_pick;
+    const ok = g.signal_correct !== null && g.signal_correct !== undefined
+      ? g.signal_correct : g.top_pick_correct;
+
+    return `
+    <article class="hist">
+      <div class="hist-top">
+        <span>${escapeHtml(formatDay(dayKey(r.fixture)))} · ${escapeHtml(roundLabel(r.fixture.round))}</span>
+        ${a.half_time ? `<span>HT ${a.half_time.home}–${a.half_time.away}</span>` : ""}
+      </div>
+      <div class="hist-score">
+        <div class="hist-row ${homeWon ? "won" : "lost"}">
+          <span>${escapeHtml(shortName(r.home_team))}</span><b>${a.home_goals}</b>
+        </div>
+        <div class="hist-row ${awayWon ? "won" : "lost"}">
+          <span>${escapeHtml(shortName(r.away_team))}</span><b>${a.away_goals}</b>
+        </div>
+      </div>
+      <div class="hist-check">
+        <span class="dim">Dự đoán:</span>
+        <span class="${ok ? "ok" : "bad"}">${escapeHtml(pick || "—")} ${ok ? "✓" : "✕"}</span>
+        ${g.score_predicted ? `<span class="dim">· tỷ số ${escapeHtml(g.score_predicted)}
+          ${g.score_correct ? '<span class="ok">✓</span>' : ""}</span>` : ""}
+        <span class="dim">· gán ${pct(g.probability_of_actual || 0)} cho kết quả thật</span>
+      </div>
+      ${goals}
+    </article>`;
+  }).join("");
+
+  view().innerHTML = `
+    <div class="card">
+      <div class="card-title">Đối chiếu dự đoán — ${graded.length} trận</div>
+      <div class="acc-grid">
+        <div class="acc-cell"><b>${graded.length ? pct(correct / graded.length) : "—"}</b>
+          <span>đúng cửa 1X2</span></div>
+        <div class="acc-cell"><b>${scored.length ? pct(scoreHit / scored.length) : "—"}</b>
+          <span>đúng tỷ số</span></div>
+        <div class="acc-cell"><b>${brier.toFixed(2)}</b><span>Brier (thấp = tốt)</span></div>
+      </div>
+    </div>
+    <div class="note">Mẫu còn nhỏ nên các con số này dao động mạnh. Chỉ sau vài
+      chục trận chúng mới đáng tin. Brier dưới 0.60 là khá, dưới 0.55 là tốt.</div>
+    ${card}`;
 }
 
 /* ---------------- Bảng xếp hạng ---------------- */
@@ -645,6 +749,7 @@ async function renderAbout() {
 
 const RENDERERS = {
   fixtures: renderFixtures,
+  history: renderHistory,
   standings: renderStandings,
   strength: renderStrength,
   about: renderAbout,

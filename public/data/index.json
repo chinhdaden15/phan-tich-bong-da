@@ -1,26 +1,78 @@
 {
-  "generated_at": "2026-09-08T21:35:06+00:00",
+  "generated_at": "2026-09-09T03:42:40+00:00",
   "leagues": [
     {
       "id": "premier-league",
       "name": "Ngoại hạng Anh",
       "season": 2026,
       "fixtures": 20,
-      "teams": 20
+      "teams": 20,
+      "history": 0,
+      "accuracy": {
+        "matches": 0
+      }
     },
     {
       "id": "la-liga",
       "name": "La Liga",
       "season": 2026,
       "fixtures": 29,
-      "teams": 20
+      "teams": 20,
+      "history": 2,
+      "accuracy": {
+        "matches": 2,
+        "top_pick_correct": 1,
+        "top_pick_accuracy": 0.5,
+        "mean_brier": 0.5764,
+        "score_exact": {
+          "checked": 2,
+          "correct": 0,
+          "accuracy": 0.0
+        },
+        "by_signal_strength": {
+          "mơ hồ": {
+            "matches": 1,
+            "correct": 1,
+            "accuracy": 1.0
+          }
+        }
+      }
     },
     {
       "id": "champions-league",
       "name": "Champions League",
       "season": 2026,
       "fixtures": 12,
-      "teams": 36
+      "teams": 36,
+      "history": 6,
+      "accuracy": {
+        "matches": 6,
+        "top_pick_correct": 5,
+        "top_pick_accuracy": 0.8333,
+        "mean_brier": 0.4447,
+        "score_exact": {
+          "checked": 6,
+          "correct": 1,
+          "accuracy": 0.1667
+        },
+        "by_signal_strength": {
+          "rõ": {
+            "matches": 1,
+            "correct": 1,
+            "accuracy": 1.0
+          },
+          "vừa": {
+            "matches": 1,
+            "correct": 1,
+            "accuracy": 1.0
+          },
+          "mơ hồ": {
+            "matches": 2,
+            "correct": 2,
+            "accuracy": 1.0
+          }
+        }
+      }
     }
   ],
   "model": {

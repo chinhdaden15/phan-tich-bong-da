@@ -50,6 +50,7 @@ Tổng dung lượng dữ liệu: khoảng 160 KB cho 2 giải.
 | **openfootball** | Kết quả lịch sử, lịch thi đấu (12 giải) | Không | Không |
 | **football-data.org** | Champions League + kết quả mới các giải | Có (miễn phí) | 10 req/phút, 12 giải |
 | **The Odds API** | Kèo trận sắp tới | Có (miễn phí) | 500 lượt/tháng |
+| **ESPN** | Người ghi bàn, tỷ số hiệp 1 | Không | Không (API không tài liệu) |
 | **mirror football-data** | Kèo đóng cửa lịch sử | Không | Không |
 
 Đăng ký key miễn phí (tuỳ chọn):
@@ -132,6 +133,69 @@ Key đặt ở hai chỗ:
 Tab **Cài đặt** trong app hiển thị nguồn nào đang hoạt động, nguồn nào bị chặn,
 dữ liệu cập nhật lần cuối lúc nào — nhưng chỉ hiện trạng thái có/không, không
 bao giờ hiện giá trị key.
+
+---
+
+## Lịch sử và đối chiếu dự đoán
+
+`predictions.json` chỉ chứa trận SẮP tới và bị ghi lại mỗi lần build — trận đá
+xong là dự đoán biến mất. Không lưu lại thì không thể trả lời câu hỏi quan
+trọng nhất: **mô hình này đoán đúng bao nhiêu phần?**
+
+`pipeline/history.py` chạy trước khi ghi đè: đọc bản của lần build trước, tìm
+trận nay đã đá, gắn kết quả thật cùng người ghi bàn, rồi nối vào `history.json`.
+
+Bản dự đoán được lưu là bản của lần build **gần nhất trước giờ bóng lăn**, chứ
+không phải bản đầu tiên — đó mới là dự đoán người dùng thực sự nhìn thấy.
+
+Mỗi trận được chấm ba tiêu chí:
+
+- **Đúng cửa** — cửa app nêu trong phần nhận định có trúng không
+- **Xác suất gán cho kết quả thật** — quan trọng hơn đúng/sai. Trúng với 70%
+  đáng khen hơn trúng với 40%; trượt khi đã gán 15% cho kết quả thật thì tệ
+  hơn nhiều so với trượt khi gán 33%
+- **Brier** cho từng trận, cộng lại thành điểm trung bình
+
+Người ghi bàn lấy từ API công khai của ESPN (`sources/espn.py`) — kèm phút,
+người kiến tạo, và tỷ số hiệp 1 suy từ các bàn thuộc hiệp 1. Gói miễn phí của
+football-data.org không trả mảng `goals`, còn API-Football chặn mùa hiện tại.
+
+`pipeline/backfill_history.py` khôi phục lịch sử từ các phiên bản
+`predictions.json` cũ trong git — đã cứu được 8 trận có dự đoán đưa ra trước
+khi hệ thống lưu trữ tồn tại.
+
+---
+
+## Kèo hiệp 1
+
+Suy từ bàn thắng kỳ vọng cả trận nhân với tỷ lệ bàn ghi trong hiệp 1, đo từ
+chính dữ liệu của giải: **44.5%** ở Ngoại hạng Anh (1.821 trận), **44.1%** ở
+La Liga (1.783 trận), **44.2%** trên 5 giải lớn (5.000 trận).
+
+Đối chiếu với kèo thật của nhà cái cho trận Aston Villa vs Nottingham Forest:
+
+| | nhà | hoà | khách | tài 0.5 H1 |
+|---|---|---|---|---|
+| nhà cái | 33.9% | 42.2% | 23.9% | 67.1% |
+| mô hình | 32.5% | 42.9% | 24.6% | 68.3% |
+| lệch | −1.4 | +0.7 | +0.7 | +1.1 |
+
+Lệch tối đa 1.4 điểm phần trăm. Tự tính thay vì mua kèo vì thị trường hiệp 1
+chỉ có qua endpoint riêng từng trận của The Odds API, tốn 4 lượt mỗi trận —
+với 61 trận thì vượt xa trần 500 lượt/tháng.
+
+### Vì sao không có dự đoán người ghi bàn
+
+Đã dựng thử và **loại bỏ sau khi đối chiếu**. Dữ liệu miễn phí duy nhất là
+endpoint scorers của football-data.org: 60 cầu thủ toàn giải, chỉ gồm những
+người ĐÃ ghi bàn. Nhà cái treo kèo cho 35 cầu thủ mỗi trận, gồm cả người chưa
+ghi bàn nào.
+
+Kết quả khi thử: Aston Villa chưa ghi bàn nào sau 3 vòng nên không có cầu thủ
+nào để tính; Tammy Abraham — cửa nhà cái đánh giá cao nhất — không có trong dữ
+liệu; sai số so với kèo thật là **8-11 điểm phần trăm**.
+
+Người ghi bàn THỰC TẾ của các trận đã đá thì có đầy đủ trong phần lịch sử.
 
 ---
 
@@ -412,9 +476,13 @@ pipeline/
     markets.py           ma trận tỷ số -> 1X2, tài xỉu, BTTS
     evaluate.py          RPS, Brier, log-loss, hiệu chuẩn
     predictor.py         gộp thành một dự đoán hoàn chỉnh
+  history.py             lưu dự đoán và chấm điểm sau trận
+  backfill_history.py    khôi phục lịch sử từ git (chạy một lần)
   model/
     cross_league.py      mô hình phân tầng cho Champions League
+    extra_markets.py     kèo hiệp 1
   sources/
+    espn.py              người ghi bàn và tỷ số hiệp 1
     openfootball.py      kết quả và lịch 12 giải (không cần key)
     football_data_org.py lịch, kết quả và BXH Champions League
     european.py          gộp dữ liệu quốc nội + C1 làm cầu nối
