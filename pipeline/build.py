@@ -365,13 +365,29 @@ def build_champions_league() -> dict:
           f"{len(set(pool.home_team) | set(pool.away_team))} đội")
 
     league_dir = OUT_DIR / "champions-league"
-    cl_results = pool[pool["bridge"]][
-        ["date", "home_team", "away_team", "home_goals", "away_goals"]
-    ].copy()
-    cl_results["result"] = cl_results.apply(
-        lambda r: "H" if r.home_goals > r.away_goals
-        else ("A" if r.home_goals < r.away_goals else "D"), axis=1
-    )
+
+    # Kết quả C1 MÙA NÀY, lấy riêng từ API.
+    #
+    # Không dùng pool[pool["bridge"]] được: tập gộp chỉ chứa C1 của hai mùa
+    # TRƯỚC (dùng làm cầu nối hiệu chỉnh mặt bằng giải), hoàn toàn không có
+    # trận mùa hiện tại. Lấy nhầm nguồn đó gây hai lỗi cùng lúc — cột phong độ
+    # hiện 5 trận trong khi đội mới đá 1, và lịch sử dự đoán không bao giờ
+    # lưu được vì không tìm thấy kết quả để đối chiếu.
+    cl_rows = []
+    for m in football_data_org.season_matches("champions-league", CURRENT_SEASON):
+        if m["home_goals"] is None:
+            continue
+        cl_rows.append({
+            "date": pd.Timestamp(m["date"]),
+            "home_team": m["home_team"], "away_team": m["away_team"],
+            "home_goals": m["home_goals"], "away_goals": m["away_goals"],
+            "result": ("H" if m["home_goals"] > m["away_goals"]
+                       else "A" if m["home_goals"] < m["away_goals"] else "D"),
+        })
+    cl_results = pd.DataFrame(cl_rows, columns=[
+        "date", "home_team", "away_team", "home_goals", "away_goals", "result"
+    ])
+    print(f"  kết quả C1 mùa này: {len(cl_results)} trận đã đá")
     espn_details = espn.details_for_dates("champions-league", espn.recent_days(10))
     archived, newly = history_mod.archive_finished(
         "champions-league", league_dir, cl_results, espn_details=espn_details
@@ -493,10 +509,26 @@ def build_champions_league() -> dict:
     all_names = sorted(set(fixtures["home_team"]) | set(fixtures["away_team"])) if len(fixtures) else []
     all_resolved, _ = european.resolve_against_pool(all_names, pool)
     participants = set(all_resolved.values())
+    resolved_by_display = dict(all_resolved)
     strength = european_strength_table(fit, sorted(participants))
 
     try:
         standings = football_data_org.standings("champions-league")
+        # API không trả phong độ 5 trận gần nhất, tự tính từ kết quả để bảng
+        # C1 có cùng bộ trường với bảng các giải quốc nội. Thiếu trường này
+        # từng làm cả tab bảng xếp hạng trắng trơn vì giao diện gọi r.form.map().
+        # Cả hai phía đều quy về tên đã chuẩn hoá trước khi tra, nếu không
+        # "Manchester City FC" và "manchester city" thành hai đội khác nhau
+        # và cột phong độ rỗng trơn.
+        form_by_team = {}
+        for _, m in cl_results.sort_values("date").iterrows():
+            for team, res in (
+                (m["home_team"], "W" if m["result"] == "H" else ("L" if m["result"] == "A" else "D")),
+                (m["away_team"], "W" if m["result"] == "A" else ("L" if m["result"] == "H" else "D")),
+            ):
+                form_by_team.setdefault(normalise(team), []).append(res)
+        for row in standings:
+            row["form"] = form_by_team.get(normalise(row["team"]), [])[-5:]
         print(f"  bảng xếp hạng: {len(standings)} đội")
     except LookupError:
         # Vòng bảng chưa đá trận nào thì chưa có bảng — bình thường đầu mùa.

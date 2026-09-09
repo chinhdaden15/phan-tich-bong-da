@@ -39,6 +39,17 @@ REQUIRED_PREDICTION_FIELDS = [
     "confidence", "fixture", "signal",
 ]
 
+# Trường bắt buộc trong mỗi dòng bảng xếp hạng.
+#
+# Danh sách này ra đời từ một lỗi thật: bảng Champions League lấy thẳng từ API
+# nên thiếu trường "form", trong khi bảng các giải quốc nội tự tính nên có.
+# Giao diện gọi r.form.map() và ném lỗi, làm CẢ TAB bảng xếp hạng trắng trơn —
+# không có thông báo lỗi nào ở đâu. Hai nguồn cùng đổ vào một giao diện thì
+# phải có cùng bộ trường, và đây là chỗ kiểm tra điều đó.
+REQUIRED_STANDINGS_FIELDS = [
+    "position", "team", "played", "points", "goal_difference", "form",
+]
+
 
 class CheckFailed(RuntimeError):
     pass
@@ -126,12 +137,33 @@ def check_predictions(errors: list[str]) -> None:
                     )
 
 
+def check_standings(errors: list[str]) -> None:
+    """Mọi dòng bảng xếp hạng phải đủ trường mà giao diện đọc tới."""
+    index_file = PUBLIC / "data" / "index.json"
+    if not index_file.exists():
+        return
+
+    index = json.loads(index_file.read_text(encoding="utf-8"))
+    for entry in index.get("leagues", []):
+        league = entry["id"]
+        path = PUBLIC / "data" / league / "standings.json"
+        if not path.exists():
+            continue
+        rows = json.loads(path.read_text(encoding="utf-8"))
+        for i, row in enumerate(rows):
+            for field in REQUIRED_STANDINGS_FIELDS:
+                if field not in row:
+                    errors.append(f"{league}: bảng xếp hạng dòng {i} thiếu {field!r}")
+                    break     # một lỗi mỗi dòng là đủ để biết
+
+
 def run(verbose: bool = True) -> list[str]:
     """Chạy toàn bộ kiểm tra. Trả về danh sách lỗi, rỗng nghĩa là đạt."""
     errors: list[str] = []
     check_js(errors)
     check_json(errors)
     check_predictions(errors)
+    check_standings(errors)
 
     if verbose:
         if errors:
@@ -142,7 +174,7 @@ def run(verbose: bool = True) -> list[str]:
                 print(f"  ... và {len(errors) - 15} lỗi nữa")
         else:
             print("\nTự kiểm tra: đạt "
-                  f"({len(REQUIRED_JS)} hàm, JSON hợp lệ, dự đoán đủ trường)")
+                  f"({len(REQUIRED_JS)} hàm, JSON hợp lệ, dự đoán và bảng xếp hạng đủ trường)")
     return errors
 
 

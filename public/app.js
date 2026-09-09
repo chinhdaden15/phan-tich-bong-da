@@ -91,7 +91,12 @@ function titleCase(name) {
 function shortName(name) {
   return titleCase(name)
     .replace(/\s+(FC|CF|AFC|SAD|BC)$/i, "")
-    .replace(/^(FC|CF|AFC|Real|Club Atlético de)\s+/i, (m) => (/^Real$/i.test(m.trim()) ? m : ""))
+    // Chỉ bỏ tiền tố pháp lý, GIỮ phần phân biệt. Trước đây luật này biến
+    // "Club Atlético de Madrid" thành "Madrid" — nằm ngay cạnh Real Madrid
+    // trong bảng Champions League thì không ai đọc ra là đội nào.
+    .replace(/^(FC|CF|AFC|SS|SL|AC|Club)\s+/i, "")
+    .replace(/^Club Atlético de\s+/i, "Atlético ")
+    .replace(/^Atlético de\s+/i, "Atlético ")
     .replace(/\s+Balompié$/i, "")
     .replace(/\s+de Fútbol$/i, "")
     .replace(/\s+CF$/i, "")
@@ -567,7 +572,18 @@ async function renderHistory() {
 
 /* ---------------- Bảng xếp hạng ---------------- */
 
+/**
+ * Vùng xếp hạng. Giải quốc nội và Champions League có luật hoàn toàn khác:
+ * giải quốc nội 20 đội lấy 4 suất C1 và xuống hạng 3 đội cuối, còn vòng bảng
+ * C1 có 36 đội, 8 đội đầu vào thẳng vòng 1/8, hạng 9-24 đá play-off, từ 25
+ * trở xuống bị loại.
+ */
 function zoneClass(pos, total) {
+  if (total > 30) {
+    if (pos <= 8) return "zone-ucl";
+    if (pos <= 24) return "zone-uel";
+    return "zone-rel";
+  }
   if (pos <= 4) return "zone-ucl";
   if (pos <= 6) return "zone-uel";
   if (pos > total - 3) return "zone-rel";
@@ -588,7 +604,7 @@ async function renderStandings() {
       <td class="num">${r.played}</td>
       <td class="num">${r.goal_difference > 0 ? "+" : ""}${r.goal_difference}</td>
       <td class="pts">${r.points}</td>
-      <td style="padding-right:12px"><span class="form">${r.form.map((f) => `<i class="${f}">${f}</i>`).join("")}</span></td>
+      <td style="padding-right:12px"><span class="form">${(r.form || []).map((f) => `<i class="${f}">${f}</i>`).join("")}</span></td>
     </tr>`).join("");
 
   view().innerHTML = `
@@ -599,8 +615,9 @@ async function renderStandings() {
         <tbody>${body}</tbody>
       </table>
     </div>
-    <div class="note">Bảng xếp hạng tính trực tiếp từ kết quả trận đấu, không gọi API.
-      Viền xanh lá = suất Champions League, xanh dương = Europa League, đỏ = xuống hạng.</div>`;
+    <div class="note">${rows.length > 30
+      ? "Vòng bảng Champions League 36 đội. Viền xanh lá = vào thẳng vòng 1/8 (hạng 1-8), xanh dương = đá play-off (9-24), đỏ = bị loại (25-36)."
+      : "Viền xanh lá = suất Champions League, xanh dương = Europa League, đỏ = xuống hạng."}</div>`;
 }
 
 /* ---------------- Sức mạnh đội bóng ---------------- */
