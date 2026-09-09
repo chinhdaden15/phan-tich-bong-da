@@ -344,74 +344,56 @@ function marketSection(p) {
 }
 
 /**
- * Phần cầu thủ ghi bàn. Có hai chế độ vì dữ liệu đến ở hai thời điểm khác nhau.
+ * Phần cầu thủ ghi bàn.
  *
- * ESPN chỉ công bố đội hình khoảng một tiếng trước giờ bóng lăn, trong khi app
- * hiển thị lịch tới 14 ngày. Nếu chỉ dựa vào đội hình thì phần lớn thời gian
- * mục này trống trơn — nên trước đó hiện danh sách theo phong độ ghi bàn, và
- * ghi rõ đó chưa phải xác suất.
+ * Mặc định tính trên ĐỘI HÌNH ĐĂNG KÝ nên có ngay từ khi lịch xuất hiện. Đội
+ * hình ra sân chỉ được công bố khoảng một tiếng trước giờ bóng lăn — nếu chờ
+ * nó thì gần như lúc nào mở app cũng không có gì để xem. Khi đội hình ra sân
+ * về, phần này tự chuyển sang bản chính xác hơn tính trên 11 người đá chính.
  */
 function scorersSection(p) {
   const lu = p.lineup;
-  if (lu?.available) {
-    const blocks = ["home", "away"].map((side) => {
-      const d = lu.sides[side];
-      if (!d) return "";
-      return `
-      <div class="lineup">
-        <div class="lineup-head">${escapeHtml(shortName(d.team))}
-          ${d.formation ? `<span>${escapeHtml(d.formation)}</span>` : ""}</div>
-        <div class="lineup-xi">${d.starters.map((x) =>
-          escapeHtml(x.name.split(" ").slice(-1)[0])).join(" · ")}</div>
-        ${d.scorers?.length ? `<div class="lineup-scorers">
-          ${d.scorers.slice(0, 4).map((x) => `<div class="kv">
-            <span>${escapeHtml(x.player)} <span style="color:var(--text-faint)">${escapeHtml(x.position || "")}</span></span>
-            <b>${pct(x.probability)}</b></div>`).join("")}
-        </div>` : ""}
-      </div>`;
-    }).join("");
-
-    return `
-    <div class="section-label">Đội hình ra sân · xác suất ghi bàn</div>
-    ${blocks}
-    <div class="note"><strong>Ước lượng thô.</strong> Tính từ số bàn của cầu thủ
-      mùa này và mùa trước, cộng mức nền theo vị trí, rồi chuẩn hoá theo bàn
-      thắng kỳ vọng của đội. Kiểm chứng ngược trên trận đã đá: người ghi bàn
-      thật xếp hạng 1 và 2 trên 11. Chỉ tính <strong>11 người đá chính</strong> —
-      cầu thủ vào sân từ ghế dự bị không có trong danh sách.</div>`;
-  }
-
-  const form = p.in_form_scorers;
-  const hasAny = form && ((form.home || []).length || (form.away || []).length);
-  if (!hasAny) return "";
+  const fromLineup = !!lu?.available;
 
   const block = (side, team) => {
-    const rows = form[side] || [];
-    if (!rows.length) {
-      return `<div class="lineup"><div class="lineup-head">${escapeHtml(shortName(team))}</div>
-        <div class="lineup-xi">Chưa có cầu thủ nào ghi bàn mùa này.</div></div>`;
-    }
+    const rows = fromLineup
+      ? (lu.sides[side]?.scorers || []).slice(0, 3)
+      : (p.scorers?.[side] || []);
+    if (!rows.length) return "";
+
+    const xi = fromLineup && lu.sides[side]?.starters
+      ? `<div class="lineup-xi">${lu.sides[side].starters.map((x) =>
+          escapeHtml(x.name.split(" ").slice(-1)[0])).join(" · ")}</div>`
+      : "";
+
     return `
     <div class="lineup">
-      <div class="lineup-head">${escapeHtml(shortName(team))}</div>
+      <div class="lineup-head">${escapeHtml(shortName(team))}
+        ${fromLineup && lu.sides[side]?.formation
+          ? `<span>${escapeHtml(lu.sides[side].formation)}</span>` : ""}</div>
+      ${xi}
       <div class="lineup-scorers">
         ${rows.map((x) => `<div class="kv">
-          <span>${escapeHtml(x.player)}</span>
-          <b>${x.goals_this_season} bàn
-            <span style="color:var(--text-faint);font-weight:500;font-size:12px">
-              (${x.per_match.toFixed(2)}/trận)</span></b>
-        </div>`).join("")}
+          <span>${escapeHtml(x.player)}
+            ${x.goals_this_season ? `<span style="color:var(--text-faint);font-size:11.5px">${x.goals_this_season} bàn</span>` : ""}</span>
+          <b>${pct1(x.probability)}</b></div>`).join("")}
       </div>
     </div>`;
   };
 
+  const home = block("home", p.home_team);
+  const away = block("away", p.away_team);
+  if (!home && !away) return "";
+
   return `
-    <div class="section-label">Cầu thủ đang ghi bàn tốt nhất</div>
-    ${block("home", p.home_team)}
-    ${block("away", p.away_team)}
-    <div class="note"><strong>Đây chưa phải xác suất ghi bàn.</strong> Đội hình ra
-      sân chỉ được công bố khoảng một tiếng trước giờ bóng lăn. Khi có đội hình,
-      mục này tự chuyển thành xác suất tính trên 11 người đá chính.</div>`;
+    <div class="section-label">Ba cầu thủ dễ ghi bàn nhất${fromLineup ? " · đội hình ra sân" : ""}</div>
+    ${home}${away}
+    <div class="note"><strong>Ước lượng thô.</strong>
+      ${fromLineup
+        ? "Tính trên 11 người đá chính. Cầu thủ vào sân từ ghế dự bị không có trong danh sách."
+        : "Tính trên đội hình đăng ký, chưa biết ai đá chính. Khoảng một tiếng trước giờ bóng lăn, khi đội hình ra sân được công bố, phần này tự cập nhật chính xác hơn."}
+      Xác suất dựa trên số bàn mùa này và mùa trước cộng mức nền theo vị trí,
+      chuẩn hoá theo bàn thắng kỳ vọng của đội.</div>`;
 }
 
 function openSheet(p) {
@@ -525,8 +507,104 @@ function openSheet(p) {
 }
 
 function closeSheet() {
+  const panel = el("sheet").querySelector(".sheet-panel");
+  if (panel) {
+    panel.style.transition = "";
+    panel.style.transform = "";
+  }
   el("sheet").hidden = true;
   document.body.style.overflow = "";
+}
+
+/**
+ * Vuốt xuống để đóng bảng chi tiết.
+ *
+ * Trước đây chỉ đóng được bằng cách bấm ra vùng tối bên ngoài — trên điện
+ * thoại cầm một tay thì với tới đó rất khó, trong khi vuốt xuống là thao tác
+ * ai cũng thử đầu tiên.
+ *
+ * Điểm cần cẩn thận: bảng chi tiết dài hơn màn hình nên chính nó cuộn được.
+ * Chỉ bắt đầu kéo khi nội dung đã ở TRÊN CÙNG (scrollTop <= 0), nếu không thì
+ * vuốt xuống giữa bài sẽ đóng bảng thay vì cuộn lên — hành vi khó chịu hơn cả
+ * việc không vuốt được.
+ */
+function enableSwipeToClose() {
+  const sheet = el("sheet");
+  const panel = sheet.querySelector(".sheet-panel");
+  const grip = sheet.querySelector(".sheet-grip");
+  if (!panel) return;
+
+  const CLOSE_DISTANCE = 110;   // px kéo xuống là đóng
+  const FLICK_SPEED = 0.5;      // px/ms — vẩy nhanh thì đóng dù kéo ngắn
+
+  let startY = 0;
+  let startAt = 0;
+  let offset = 0;
+  let dragging = false;
+  let fromGrip = false;
+
+  const onStart = (e) => {
+    const touch = e.touches ? e.touches[0] : e;
+    fromGrip = grip && grip.contains(e.target);
+    // Kéo từ thanh nắm thì luôn được; kéo từ nội dung chỉ khi đã cuộn lên đầu.
+    if (!fromGrip && panel.scrollTop > 0) return;
+    dragging = true;
+    startY = touch.clientY;
+    startAt = Date.now();
+    offset = 0;
+    panel.style.transition = "none";
+  };
+
+  const onMove = (e) => {
+    if (!dragging) return;
+    const touch = e.touches ? e.touches[0] : e;
+    const delta = touch.clientY - startY;
+
+    if (delta < 0) {
+      // Kéo ngược lên: nhả quyền điều khiển để nội dung cuộn bình thường.
+      offset = 0;
+      panel.style.transform = "";
+      dragging = false;
+      return;
+    }
+    offset = delta;
+    panel.style.transform = `translateY(${delta}px)`;
+    if (e.cancelable) e.preventDefault();
+  };
+
+  const onEnd = () => {
+    if (!dragging) return;
+    dragging = false;
+    const speed = offset / Math.max(Date.now() - startAt, 1);
+    panel.style.transition = "transform .2s cubic-bezier(.32,.72,0,1)";
+
+    if (offset > CLOSE_DISTANCE || speed > FLICK_SPEED) {
+      panel.style.transform = `translateY(${panel.offsetHeight}px)`;
+      setTimeout(closeSheet, 180);
+    } else {
+      panel.style.transform = "";
+    }
+  };
+
+  panel.addEventListener("touchstart", onStart, { passive: true });
+  panel.addEventListener("touchmove", onMove, { passive: false });
+  panel.addEventListener("touchend", onEnd);
+  panel.addEventListener("touchcancel", onEnd);
+
+  // Chuột: chỉ dùng thanh nắm, để không cướp thao tác bôi đen chữ.
+  if (grip) {
+    grip.addEventListener("mousedown", (e) => {
+      onStart(e);
+      const move = (ev) => onMove(ev);
+      const up = () => {
+        onEnd();
+        window.removeEventListener("mousemove", move);
+        window.removeEventListener("mouseup", up);
+      };
+      window.addEventListener("mousemove", move);
+      window.addEventListener("mouseup", up);
+    });
+  }
 }
 
 /* ---------------- Lịch sử ---------------- */
@@ -892,6 +970,7 @@ async function init() {
   el("sheet").addEventListener("click", (e) => {
     if (e.target.hasAttribute("data-close")) closeSheet();
   });
+  enableSwipeToClose();
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !el("sheet").hidden) closeSheet();
   });

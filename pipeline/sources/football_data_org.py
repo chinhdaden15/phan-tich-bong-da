@@ -272,3 +272,36 @@ def season_matches(league: str, season: int, finished_only: bool = True) -> list
             "away_goals": int(away) if played else None,
         })
     return out
+
+
+def squad(team_id: int) -> list[dict]:
+    """
+    Đội hình đăng ký của một CLB: tên và vị trí từng cầu thủ.
+
+    Có sẵn trên gói miễn phí và đổi rất chậm (chỉ khi chuyển nhượng), nên cache
+    một tuần. Đây là nguồn cho phép ước lượng người ghi bàn NGAY khi có lịch,
+    thay vì phải đợi đội hình ra sân công bố sát giờ bóng lăn.
+    """
+    payload = _get(f"teams/{team_id}", cache_hours=24 * 7)
+    out = []
+    for player in payload.get("squad") or []:
+        name = player.get("name")
+        if not name:
+            continue
+        out.append({
+            "name": name,
+            "position": player.get("position"),
+            "shirt": player.get("shirtNumber"),
+        })
+    return out
+
+
+def competition_teams(league: str) -> list[dict]:
+    """Danh sách CLB của một giải, kèm mã đội để tra đội hình đăng ký."""
+    if league not in COMPETITIONS:
+        raise KeyError(f"Giải không được hỗ trợ: {league!r}")
+    payload = _get(f"competitions/{COMPETITIONS[league]}/teams", cache_hours=24 * 7)
+    return [
+        {"id": t.get("id"), "name": t.get("name"), "short": t.get("shortName")}
+        for t in payload.get("teams", []) if t.get("id") and t.get("name")
+    ]

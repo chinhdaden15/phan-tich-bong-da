@@ -196,11 +196,27 @@ DEFAULT_POSITION_RATE = 0.10
 POSITION_PRIOR_MATCHES = 6.0
 
 
+# football-data.org ghi vị trí đầy đủ ("Centre-Forward"), ESPN ghi viết tắt
+# ("F", "AM-L"). Hai nguồn cùng đổ vào một hàm nên phải nhận cả hai dạng.
+FULL_POSITION_RATE = {
+    "GOALKEEPER": 0.001,
+    "DEFENCE": 0.04, "DEFENDER": 0.04,
+    "CENTRE-BACK": 0.04, "LEFT-BACK": 0.04, "RIGHT-BACK": 0.05,
+    "MIDFIELD": 0.10, "MIDFIELDER": 0.10,
+    "DEFENSIVE MIDFIELD": 0.05, "CENTRAL MIDFIELD": 0.10,
+    "ATTACKING MIDFIELD": 0.18,
+    "OFFENCE": 0.24, "ATTACKER": 0.24, "FORWARD": 0.28,
+    "CENTRE-FORWARD": 0.30, "LEFT WINGER": 0.20, "RIGHT WINGER": 0.20,
+}
+
+
 def _position_rate(position: str | None) -> float:
     if not position:
         return DEFAULT_POSITION_RATE
-    key = str(position).upper().split("-")[0]
-    return POSITION_BASE_RATE.get(key, DEFAULT_POSITION_RATE)
+    text = str(position).strip().upper()
+    if text in FULL_POSITION_RATE:
+        return FULL_POSITION_RATE[text]
+    return POSITION_BASE_RATE.get(text.split("-")[0], DEFAULT_POSITION_RATE)
 
 
 def scorers_from_lineup(
@@ -287,3 +303,63 @@ def in_form_scorers(
 
     rows.sort(key=lambda r: (r["per_match"], r["goals"]), reverse=True)
     return rows[:limit]
+
+
+# Cầu thủ trong đội hình đăng ký nhưng hiếm khi ra sân sẽ làm loãng phép chuẩn
+# hoá. Chỉ giữ lại ngần này người có khả năng đá cao nhất trước khi chia phần.
+SQUAD_CANDIDATES = 14
+
+
+def squad_scorer_probabilities(
+    squad: list[dict], rates: dict[str, dict], team_lambda: float, limit: int = 3,
+) -> list[dict]:
+    """
+    Xác suất ghi bàn cho cả ĐỘI HÌNH ĐĂNG KÝ, không cần đội hình ra sân.
+
+    Đội hình ra sân chỉ có khoảng một tiếng trước giờ bóng lăn, nên nếu chỉ dựa
+    vào nó thì gần như lúc nào mở app cũng không có gì. Đội hình đăng ký thì có
+    sẵn từ đầu mùa.
+
+    Đánh đổi: không biết ai thực sự đá chính, nên con số kém chắc hơn bản tính
+    trên 11 người ra sân. Bù lại bằng cách chỉ xét những cầu thủ nhiều khả năng
+    ra sân nhất (theo phong độ ghi bàn và mức nền vị trí), thay vì chia đều cho
+    cả 27 người trong danh sách.
+    """
+    if not squad or team_lambda <= 0:
+        return []
+
+    rows = []
+    for player in squad:
+        name = player.get("name")
+        if not name:
+            continue
+        base = _position_rate(player.get("position"))
+        record = rates.get(name)
+        goals = record["goals"] if record else 0.0
+        matches = record["matches"] if record else 0.0
+        rate = (goals + base * POSITION_PRIOR_MATCHES) / (matches + POSITION_PRIOR_MATCHES)
+        rows.append({
+            "player": name,
+            "position": player.get("position"),
+            "rate": rate,
+            "goals_this_season": (record or {}).get("goals_current", 0),
+            "has_data": bool(record),
+        })
+
+    rows.sort(key=lambda r: r["rate"], reverse=True)
+    pool = rows[:SQUAD_CANDIDATES]
+    total = sum(r["rate"] for r in pool)
+    if total <= 0:
+        return []
+
+    out = []
+    for row in pool:
+        expected = team_lambda * (row["rate"] / total)
+        out.append({
+            "player": row["player"],
+            "position": row["position"],
+            "probability": round(1.0 - math.exp(-expected), 4),
+            "goals_this_season": row["goals_this_season"],
+            "has_data": row["has_data"],
+        })
+    return out[:limit]

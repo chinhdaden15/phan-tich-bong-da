@@ -31,8 +31,9 @@ from config import describe_keys, load_env
 from model.adjustments import MatchContext
 from model.cross_league import fit_cross_league
 from model.dixon_coles import fit_dixon_coles
-from model.extra_markets import (first_half_markets, in_form_scorers,
-                                 measure_h1_share, player_scoring_rates)
+from model.extra_markets import (first_half_markets, measure_h1_share,
+                                 player_scoring_rates,
+                                 squad_scorer_probabilities)
 from model.predictor import (compute_base_rates, european_strength_table,
                             predict_european_match, predict_match,
                             predict_with_market, summarise_signal,
@@ -247,9 +248,10 @@ def build_league(league: str, no_remote: bool = False) -> dict:
     h1_share, h1_n = measure_h1_share(h1_payloads)
     print(f"  hiệp 1: {h1_share:.1%} tổng bàn (đo trên {h1_n} trận)")
 
-    scorer_rates, team_players = load_scorers(league)
-    if scorer_rates:
-        print(f"  phong độ ghi bàn: {len(scorer_rates)} cầu thủ / {len(team_players)} đội")
+    scorer_rates, _ = load_scorers(league)
+    squads = load_squads(league)
+    print(f"  cầu thủ: {len(scorer_rates)} có dữ liệu ghi bàn, "
+          f"{len(squads)} đội có đội hình đăng ký")
 
     # Tiến độ mùa giải, dùng cho hệ số động lực.
     played = len(results[results["season"] == CURRENT_SEASON])
@@ -294,19 +296,16 @@ def build_league(league: str, no_remote: bool = False) -> dict:
             "league": league,
         }
         pred["head_to_head"] = head_to_head(results, f["home_team"], f["away_team"])
-        # Cầu thủ đang có phong độ ghi bàn tốt nhất. Hiện ngay từ khi có lịch,
-        # trong khi phần xác suất thật phải đợi đội hình ra sân sát giờ đá.
-        pred["in_form_scorers"] = {
-            "home": in_form_scorers(scorer_rates, team_players, f["home_team"]),
-            "away": in_form_scorers(scorer_rates, team_players, f["away_team"]),
-        }
         # Kèo hiệp 1 suy từ bàn thắng kỳ vọng cả trận. Dùng số đã hiệu chỉnh
         # theo kèo nếu có, vì nó chính xác hơn số thuần mô hình.
         _eg = pred["expected_goals"]
         pred["first_half"] = first_half_markets(_eg["home"], _eg["away"], h1_share)
-        pred["in_form_scorers"] = {
-            "home": in_form_scorers(scorer_rates, team_players, f["home_team"]),
-            "away": in_form_scorers(scorer_rates, team_players, f["away_team"]),
+        pred["scorers"] = {
+            "home": squad_scorer_probabilities(
+                squads.get(f["home_team"], []), scorer_rates, _eg["home"]),
+            "away": squad_scorer_probabilities(
+                squads.get(f["away_team"], []), scorer_rates, _eg["away"]),
+            "basis": "squad",
         }
 
         event = odds_index.get((f["home_team"], f["away_team"]))
@@ -322,6 +321,13 @@ def build_league(league: str, no_remote: bool = False) -> dict:
         if (pred.get("market") or {}).get("available"):
             _mg = pred["market"]["expected_goals"]
             pred["first_half"] = first_half_markets(_mg["home"], _mg["away"], h1_share)
+            pred["scorers"] = {
+                "home": squad_scorer_probabilities(
+                    squads.get(f["home_team"], []), scorer_rates, _mg["home"]),
+                "away": squad_scorer_probabilities(
+                    squads.get(f["away_team"], []), scorer_rates, _mg["away"]),
+                "basis": "squad",
+            }
         pred["signal"] = summarise_signal(pred, base_rates)
         predictions.append(pred)
 
@@ -437,9 +443,10 @@ def build_champions_league() -> dict:
                 continue
     h1_share, h1_n = measure_h1_share(h1_payloads)
     print(f"  hiệp 1: {h1_share:.1%} tổng bàn (đo trên {h1_n} trận 5 giải lớn)")
-    scorer_rates, team_players = load_scorers("champions-league")
-    if scorer_rates:
-        print(f"  phong độ ghi bàn: {len(scorer_rates)} cầu thủ / {len(team_players)} đội")
+    scorer_rates, _ = load_scorers("champions-league")
+    squads = load_squads("champions-league")
+    print(f"  cầu thủ: {len(scorer_rates)} có dữ liệu ghi bàn, "
+          f"{len(squads)} đội có đội hình đăng ký")
 
     fixtures = european.upcoming_champions_league(CURRENT_SEASON)
     now_utc = datetime.now(timezone.utc)
@@ -518,6 +525,13 @@ def build_champions_league() -> dict:
         if (pred.get("market") or {}).get("available"):
             _mg = pred["market"]["expected_goals"]
             pred["first_half"] = first_half_markets(_mg["home"], _mg["away"], h1_share)
+            pred["scorers"] = {
+                "home": squad_scorer_probabilities(
+                    squads.get(f["home_team"], []), scorer_rates, _mg["home"]),
+                "away": squad_scorer_probabilities(
+                    squads.get(f["away_team"], []), scorer_rates, _mg["away"]),
+                "basis": "squad",
+            }
         pred["signal"] = summarise_signal(pred, base_rates)
         predictions.append(pred)
 
@@ -587,6 +601,30 @@ SCORER_COMPETITIONS = {
     # Cầu thủ dự C1 đến từ khắp châu Âu nên phải gộp nhiều giải quốc nội.
     "champions-league": ["PL", "PD", "SA", "BL1", "FL1", "DED", "PPL"],
 }
+
+
+def load_squads(league: str) -> dict[str, list[dict]]:
+    """
+    Đội hình đăng ký của mọi CLB trong giải, khoá theo tên đội.
+
+    Cache một tuần vì danh sách chỉ đổi khi có chuyển nhượng. Lần chạy đầu tốn
+    một request mỗi CLB nên hơi lâu, các lần sau đọc thẳng từ cache.
+    """
+    try:
+        teams = football_data_org.competition_teams(league)
+    except Exception as exc:
+        print(f"  đội hình đăng ký: bỏ qua ({type(exc).__name__})")
+        return {}
+
+    squads = {}
+    for team in teams:
+        try:
+            players = football_data_org.squad(team["id"])
+        except Exception:
+            continue
+        if players:
+            squads[team["name"]] = players
+    return squads
 
 
 def load_scorers(league: str) -> tuple[dict, dict]:
