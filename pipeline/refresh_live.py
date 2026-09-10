@@ -95,6 +95,27 @@ def kickoff(pred: dict) -> datetime | None:
         return None
 
 
+def has_match_in_window(league: str) -> bool:
+    """Có trận nào sắp đá trong khung giờ công bố đội hình không?"""
+    path = DATA / league / "predictions.json"
+    if not path.exists():
+        return False
+    try:
+        preds = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+
+    now = datetime.now(timezone.utc)
+    for p in preds:
+        ko = kickoff(p)
+        if ko is None:
+            continue
+        hours = (ko - now).total_seconds() / 3600
+        if -WINDOW_HOURS_BEHIND <= hours <= WINDOW_HOURS_AHEAD:
+            return True
+    return False
+
+
 def refresh_league(league: str, rates: dict) -> int:
     """Gắn đội hình và người ghi bàn cho các trận sắp đá. Trả số trận cập nhật."""
     path = DATA / league / "predictions.json"
@@ -218,10 +239,41 @@ def refresh_standings(league: str) -> bool:
     return True
 
 
+def has_finished_since_last_run(league: str) -> bool:
+    """
+    Có trận nào đã đá xong mà chưa vào lịch sử không?
+
+    Cửa thoát sớm, và nó quan trọng về chi phí: phần nạp kết quả để lưu lịch sử
+    là việc nặng nhất của script (openfootball + football-data.org, vài phút).
+    Phần lớn lần chạy trong ngày không có trận nào vừa kết thúc, nên chỉ cần
+    đọc predictions.json là biết và bỏ qua toàn bộ phần nặng.
+    """
+    league_dir = DATA / league
+    predictions_file = league_dir / "predictions.json"
+    if not predictions_file.exists():
+        return False
+
+    try:
+        preds = json.loads(predictions_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+
+    now = datetime.now(timezone.utc)
+    # Chờ ít nhất 2 tiếng sau giờ bóng lăn: trận kéo dài ~2 tiếng và nguồn cần
+    # thêm thời gian để chốt kết quả.
+    cutoff = now - timedelta(hours=2)
+    return any(
+        (ko := kickoff(p)) is not None and ko <= cutoff
+        for p in preds
+    )
+
+
 def refresh_history(league: str) -> int:
     """Lưu các trận vừa đá xong vào lịch sử. Trả số trận vừa thêm."""
     league_dir = DATA / league
     if not (league_dir / "predictions.json").exists():
+        return 0
+    if not has_finished_since_last_run(league):
         return 0
     try:
         results = league_results(league)
@@ -258,7 +310,9 @@ def main() -> None:
             archived += added
             print(f"  {league}: lưu {added} trận vừa đá xong")
 
-        lineups += refresh_league(league, scoring_rates(league))
+        # scoring_rates() gọi tới 8 API, chỉ tải khi thật sự có trận cần đội hình.
+        if has_match_in_window(league):
+            lineups += refresh_league(league, scoring_rates(league))
 
     parts = []
     if tables:

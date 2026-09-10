@@ -208,7 +208,24 @@ def build_league(league: str, no_remote: bool = False) -> dict:
     )
     print(f"  mô hình: hội tụ={fit.converged}, sân nhà={fit.home_advantage:+.3f}, rho={fit.rho:+.3f}")
 
-    standings = compute_standings(results, CURRENT_SEASON)
+    # Bảng xếp hạng lấy từ API và bổ sung cột phong độ tự tính.
+    #
+    # Trước đây build.py tự tính còn refresh_live.py lấy API, hai nguồn không
+    # bao giờ khớp nhau nên mỗi lần chạy hằng giờ lại ghi đè và tạo commit vô
+    # ích, kéo theo một lần deploy. Một nguồn duy nhất thì so sánh mới có nghĩa.
+    computed = compute_standings(results, CURRENT_SEASON)
+    form_by_team = {normalise(r["team"]): r["form"] for r in computed}
+    try:
+        standings = football_data_org.standings(league)
+        for row in standings:
+            row["form"] = form_by_team.get(normalise(row["team"]), [])
+        if not standings:
+            raise LookupError("API trả bảng rỗng")
+    except Exception as exc:
+        # Không có API thì dùng bản tự tính — app vẫn chạy được.
+        print(f"  bảng xếp hạng: dùng bản tự tính ({type(exc).__name__})")
+        standings = computed
+
     position = {r["team"]: r["position"] for r in standings}
     total_teams = len(standings)
     print(f"  bảng xếp hạng: {total_teams} đội")

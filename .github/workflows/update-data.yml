@@ -1,23 +1,18 @@
 name: Cập nhật dữ liệu bóng đá
 
-# Chạy 4 lần/ngày, cách nhau 6 tiếng (08:00, 14:00, 20:00, 02:00 giờ VN).
+# Chạy 3 lần/ngày. Đây là công việc nặng — khớp lại toàn bộ mô hình, khoảng 7
+# phút mỗi lần — nên chỉ chạy khi thật cần.
 #
-# Hai loại dữ liệu có ràng buộc quota hoàn toàn khác nhau nên tách riêng thay
-# vì lấy nhịp chậm nhất làm chuẩn cho cả hai:
+# Những thứ đổi sau mỗi trận (bảng xếp hạng, kết quả, lịch sử, đội hình) đã
+# chuyển sang refresh-live.yml chạy dày hơn nhiều mà rất nhẹ. Ở đây chỉ còn
+# việc khớp lại mô hình và sinh dự đoán, vốn không cần cập nhật theo giờ vì
+# sức mạnh đội bóng thay đổi rất chậm.
 #
-#   Kết quả trận (football-data.org)  giới hạn 10 request/PHÚT, không giới hạn
-#                                      theo ngày -> chạy bao nhiêu cũng được
-#   Kèo (The Odds API)                 500 lượt/THÁNG, mỗi giải tốn 2 lượt
-#
-# Nên lịch chạy đặt theo nhu cầu của kết quả, còn kèo tự hãm bằng cache 11
-# tiếng trong odds_live.py: mỗi ngày chỉ thực sự gọi khoảng 2 lần.
-#   3 giải × 2 thị trường × 2 lần/ngày × 30 ngày = 360 lượt -> an toàn
-#
-# Nhờ vậy bảng xếp hạng và cột thắng/hoà/thua cập nhật trong vòng vài giờ sau
-# trận, thay vì phải đợi tới nhịp chạy chậm của phần kèo.
+# Phần kèo tự hãm bằng cache 11 tiếng trong odds_live.py nên vẫn chỉ tốn
+# khoảng 2 lượt gọi mỗi ngày cho mỗi giải.
 on:
   schedule:
-    - cron: "0 1,7,13,19 * * *"
+    - cron: "0 2,10,18 * * *"
   workflow_dispatch:        # cho phép bấm chạy tay
   push:
     branches: [main]
