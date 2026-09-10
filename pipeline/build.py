@@ -822,6 +822,15 @@ def write_index(out_dir: Path, built: list[dict]) -> None:
     keys = describe_keys()
     dump_json(index_file, {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        # Lịch cập nhật, để app tự tính và hiển thị đếm ngược. Phải khớp với
+        # cron trong .github/workflows/refresh-live.yml.
+        "refresh": {
+            "interval_hours": 3,
+            "minute_utc": 5,
+            # Cron của GitHub Actions gói miễn phí hay trễ; đo trên repo này
+            # thấy 6-37 phút. Cộng khoảng đệm để đếm ngược không về 0 rồi treo.
+            "typical_delay_minutes": 25,
+        },
         "leagues": leagues,
         "model": {"type": "dixon-coles", "xi": MODEL_XI, "ridge": MODEL_RIDGE},
         # Chỉ ghi CÓ hay KHÔNG, tuyệt đối không ghi giá trị key. File này

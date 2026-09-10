@@ -117,25 +117,61 @@ async function loadJSON(path) {
 }
 
 /**
- * Hiển thị dữ liệu cũ bao lâu rồi.
+ * Tính thời điểm cập nhật tự động kế tiếp.
  *
- * Cần thiết vì app đọc file tĩnh: bấm nút cập nhật chỉ tải lại file, chứ không
- * chạy được pipeline. Nếu không nói rõ dữ liệu dựng lúc nào thì người dùng bấm
- * nút mà không biết có gì đổi hay không.
+ * Lịch chạy nằm trong index.json và phải khớp với cron trong workflow. Cộng
+ * thêm phần đệm cho độ trễ: cron của GitHub Actions gói miễn phí là "cố gắng"
+ * chứ không cam kết — đo trên chính repo này thấy trễ từ 6 đến 37 phút. Không
+ * cộng đệm thì đếm ngược sẽ về 0 rồi treo ở đó, trông như hỏng.
  */
-function showFreshness(generatedAt) {
+function nextRefreshAt(refresh) {
+  const every = (refresh?.interval_hours || 3) * 3600000;
+  const minute = refresh?.minute_utc ?? 5;
+  const delay = (refresh?.typical_delay_minutes ?? 25) * 60000;
+
+  const now = new Date();
+  const anchor = Date.UTC(
+    now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, minute, 0, 0
+  );
+  let slot = anchor;
+  while (slot + delay <= now.getTime()) slot += every;
+  return new Date(slot + delay);
+}
+
+let freshnessTimer = null;
+
+/**
+ * Dòng trạng thái dưới tiêu đề: dữ liệu cũ bao lâu, và còn bao lâu tới lần
+ * cập nhật kế tiếp.
+ *
+ * Cần cả hai vế. Chỉ có "40 phút trước" thì không biết bao giờ mới có số mới;
+ * chỉ có đếm ngược thì không biết số đang xem cũ tới mức nào.
+ */
+function showFreshness(generatedAt, refresh) {
   const node = document.getElementById("freshness");
   if (!node || !generatedAt) return;
 
-  const built = new Date(generatedAt);
-  const mins = Math.round((Date.now() - built.getTime()) / 60000);
-  const label = mins < 2 ? "vừa xong"
-    : mins < 60 ? `${mins} phút trước`
-    : mins < 60 * 24 ? `${Math.round(mins / 60)} giờ trước`
-    : `${Math.round(mins / 1440)} ngày trước`;
+  if (freshnessTimer) clearInterval(freshnessTimer);
 
-  node.textContent = `Dữ liệu ${label}`;
-  node.classList.toggle("stale", mins > 150);
+  const paint = () => {
+    const built = new Date(generatedAt);
+    const mins = Math.round((Date.now() - built.getTime()) / 60000);
+    const age = mins < 2 ? "vừa xong"
+      : mins < 60 ? `${mins} phút trước`
+      : mins < 60 * 24 ? `${Math.round(mins / 60)} giờ trước`
+      : `${Math.round(mins / 1440)} ngày trước`;
+
+    const left = Math.max(0, Math.round((nextRefreshAt(refresh) - Date.now()) / 60000));
+    const countdown = left < 1 ? "đang cập nhật"
+      : left < 60 ? `${left} phút nữa`
+      : `${Math.floor(left / 60)}g${String(left % 60).padStart(2, "0")} nữa`;
+
+    node.textContent = `Dữ liệu ${age} · làm mới ${countdown}`;
+    node.classList.toggle("stale", mins > 380);
+  };
+
+  paint();
+  freshnessTimer = setInterval(paint, 30000);
 }
 
 const el = (id) => document.getElementById(id);
@@ -974,7 +1010,7 @@ async function init() {
     state.league = index.leagues[0]?.id;
     if (!state.league) throw new Error("Chưa có giải nào trong dữ liệu");
     renderLeagueTabs();
-    showFreshness(index.generated_at);
+    showFreshness(index.generated_at, index.refresh);
     await render();
   } catch (err) {
     view().innerHTML = `<div class="empty">Chưa có dữ liệu.<br>
@@ -1014,7 +1050,7 @@ async function init() {
         renderLeagueTabs();
       }
       await render();
-      showFreshness(index.generated_at);
+      showFreshness(index.generated_at, index.refresh);
 
       // Nói rõ có dữ liệu mới hay không, thay vì chỉ quay rồi im lặng.
       const changed = before && before !== index.generated_at;
@@ -1023,7 +1059,7 @@ async function init() {
         if (!changed) node.textContent = "Đã là bản mới nhất";
         setTimeout(() => {
           node.classList.remove("fresh-flash");
-          showFreshness(index.generated_at);
+          showFreshness(index.generated_at, index.refresh);
         }, 2200);
       }
     } catch (err) {

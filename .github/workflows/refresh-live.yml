@@ -1,20 +1,19 @@
 name: Cập nhật nhanh sau trận
 
-# Lịch chạy tính theo ngân sách 2.000 phút/tháng của gói miễn phí.
+# Chạy mỗi 3 TIẾNG, để ĐẢM BẢO dữ liệu không bao giờ cũ quá 6 tiếng.
 #
-# Mỗi lần chạy tốn khoảng 2 phút, phần lớn là checkout và cài thư viện — công
-# việc thực tế chỉ vài giây nhờ các cửa thoát sớm trong refresh_live.py.
+# Vì sao 3 chứ không phải 6: cron của GitHub Actions gói miễn phí là "cố gắng"
+# chứ không cam kết. Đo trên chính repo này, các lần chạy theo lịch bị trễ
+# 6, 8, 9, 24, 30 và 37 phút. Đặt đúng 6 tiếng thì chỉ cần một lần trễ hoặc bị
+# bỏ qua là vượt mốc. Đặt 3 tiếng thì kể cả bỏ lỡ trọn một nhịp vẫn còn trong
+# hạn 6 tiếng.
 #
-#   12 lần/ngày trong khung 12:00-23:00 UTC (19:00-06:00 giờ VN, lúc bóng lăn
-#      và vừa kết thúc ở châu Âu) -> bảng xếp hạng mới trong vòng một tiếng
-#    3 lần/ngày ngoài khung đó, vì gần như không có trận nào kết thúc
+# Giờ UTC 00,03,06,09,12,15,18,21  ->  giờ VN 07,10,13,16,19,22,01,04
 #
-#   15 lần × 2 phút × 30 ngày = 900 phút
-#   cộng update-data.yml (3 lần/ngày × 7 phút × 30 = 630) = 1.530 phút/tháng
+# Ngân sách: 8 lần × 2 phút × 30 ngày = 480 phút/tháng
 on:
   schedule:
-    - cron: "20 12-23 * * *"
-    - cron: "20 0,4,8 * * *"
+    - cron: "5 */3 * * *"
   workflow_dispatch:
 
 concurrency:

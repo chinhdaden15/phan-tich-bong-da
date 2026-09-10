@@ -296,19 +296,32 @@ football-data.org được quy về tên openfootball trước khi so, nếu kh�
 Nhờ vậy bảng xếp hạng, cột thắng/hoà/thua và phong độ 5 trận cập nhật trong
 vòng vài giờ sau trận đấu, thay vì đợi tới bảy ngày.
 
-### Vì sao lịch chạy là 4 lần/ngày
+### Lịch chạy và cam kết 6 tiếng
 
-Hai loại dữ liệu có ràng buộc quota hoàn toàn khác nhau, nên tách riêng thay
-vì lấy nhịp chậm nhất làm chuẩn cho cả hai:
+Hai workflow, tách theo mức nặng nhẹ:
+
+| | nhịp | thời lượng | làm gì |
+|---|---|---|---|
+| `refresh-live.yml` | mỗi **3 tiếng** | ~2 phút | bảng xếp hạng, kết quả, lịch sử, đội hình |
+| `update-data.yml` | mỗi **8 tiếng** | ~7 phút | khớp lại mô hình, sinh dự đoán, lấy kèo |
+
+**Vì sao 3 tiếng khi chỉ cần đảm bảo 6:** cron của GitHub Actions gói miễn phí
+là "cố gắng" chứ không cam kết. Đo trên chính repo này, các lần chạy theo lịch
+bị trễ **6, 8, 9, 24, 30 và 37 phút**. Đặt đúng 6 tiếng thì chỉ cần một lần trễ
+hoặc bị bỏ qua là vượt mốc. Đặt 3 tiếng thì kể cả mất trọn một nhịp vẫn còn
+trong hạn.
+
+Ngân sách: 8 × 2 + 3 × 7 = 37 phút/ngày = **1.110 phút/tháng**, trong hạn 2.000.
+
+Hai loại dữ liệu có ràng buộc quota khác nhau nên tách riêng:
 
 - **Kết quả trận** — football-data.org giới hạn 10 request/*phút*, không giới
   hạn theo ngày. Chạy bao nhiêu cũng được.
-- **Kèo** — The Odds API 500 lượt/*tháng*, mỗi giải tốn 2 lượt (1X2 + tài/xỉu).
+- **Kèo** — The Odds API 500 lượt/*tháng*, mỗi giải tốn 2 lượt. Tự hãm bằng
+  cache 11 tiếng nên chỉ thực sự gọi khoảng 2 lần/ngày.
 
-Lịch chạy đặt theo nhu cầu của kết quả (4 lần/ngày), còn phần kèo tự hãm bằng
-cache 11 tiếng trong `odds_live.py` nên mỗi ngày chỉ thực sự gọi khoảng 2 lần:
-3 giải × 2 thị trường × 2 lần × 30 ngày = **360 lượt/tháng**, an toàn trong
-trần 500.
+App hiển thị đếm ngược tới lần cập nhật kế tiếp, tính từ lịch ghi trong
+`index.json` cộng 25 phút đệm cho độ trễ thường gặp.
 
 ---
 

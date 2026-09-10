@@ -296,6 +296,30 @@ def refresh_history(league: str) -> int:
     return added
 
 
+def touch_index() -> None:
+    """
+    Cập nhật dấu thời gian trong index.json.
+
+    Cần thiết vì app đọc trường này để hiện "dữ liệu mới bao lâu". Trước đây
+    chỉ build.py ghi nó, nên khi script này cập nhật bảng xếp hạng thì app vẫn
+    hiển thị giờ của lần build cũ — người dùng thấy dữ liệu "6 tiếng trước"
+    trong khi nó vừa được làm mới.
+    """
+    path = DATA / "index.json"
+    if not path.exists():
+        return
+    try:
+        index = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return
+    index["generated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    index["last_light_refresh"] = index["generated_at"]
+    path.write_text(
+        json.dumps(index, ensure_ascii=False, allow_nan=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 def main() -> None:
     load_env()
     lineups = tables = archived = 0
@@ -313,6 +337,9 @@ def main() -> None:
         # scoring_rates() gọi tới 8 API, chỉ tải khi thật sự có trận cần đội hình.
         if has_match_in_window(league):
             lineups += refresh_league(league, scoring_rates(league))
+
+    if tables or archived or lineups:
+        touch_index()
 
     parts = []
     if tables:

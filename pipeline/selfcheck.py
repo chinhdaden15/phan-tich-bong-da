@@ -26,7 +26,7 @@ PUBLIC = ROOT / "public"
 # hàm ở đây mà không cập nhật danh sách thì build sẽ báo lỗi.
 REQUIRED_JS = [
     "localDate", "dayKey", "formatDay", "formatTime", "titleCase", "shortName",
-    "loadJSON", "showFreshness", "confidenceClass", "signalClass", "signalSection",
+    "loadJSON", "showFreshness", "nextRefreshAt", "confidenceClass", "signalClass", "signalSection",
     "bestSource", "matchCard", "renderFixtures",
     "scorersSection", "marketSection", "openSheet", "closeSheet", "enableSwipeToClose",
     "renderHistory", "zoneClass", "renderStandings", "renderStrength", "renderAbout",
