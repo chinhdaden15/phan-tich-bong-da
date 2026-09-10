@@ -47,7 +47,11 @@ html, body {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 16px 6px;
 }
+.brand-wrap { display: grid; gap: 1px; }
 .brand { font-size: 17px; font-weight: 650; margin: 0; letter-spacing: -.2px; }
+.freshness { font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.freshness.stale { color: var(--draw); }
+.freshness.fresh-flash { color: var(--home); }
 .icon-btn {
   background: none; border: none; color: var(--text-dim);
   padding: 7px; border-radius: 50%; cursor: pointer; display: grid; place-items: center;

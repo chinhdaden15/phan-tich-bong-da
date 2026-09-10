@@ -1,12 +1,20 @@
 """
-Cập nhật nhanh đội hình ra sân và dự đoán người ghi bàn cho các trận sắp đá.
+Cập nhật nhanh những thứ đổi ngay sau trận: bảng xếp hạng, lịch sử, đội hình.
 
-VÌ SAO TÁCH RIÊNG KHỎI build.py: ESPN chỉ công bố đội hình khoảng MỘT TIẾNG
-trước giờ bóng lăn. build.py chạy 4 lần/ngày nên gần như luôn bỏ lỡ khung giờ
-đó. Script này nhẹ (không khớp lại mô hình, chỉ đọc và ghi JSON) nên chạy được
-mỗi giờ mà vẫn nằm trong hạn 2.000 phút/tháng của GitHub Actions.
+VÌ SAO TÁCH RIÊNG KHỎI build.py: build.py khớp lại toàn bộ mô hình nên mất vài
+phút, chỉ chạy được 4 lần/ngày. Nhưng hai thứ người dùng mở app để xem —
+BẢNG XẾP HẠNG và KẾT QUẢ — thì đổi ngay khi trận kết thúc, và đợi tới 6 tiếng
+là quá lâu.
 
-    python pipeline/refresh_lineups.py
+Script này không khớp lại mô hình, chỉ gọi API và ghi JSON, nên chạy được mỗi
+giờ mà vẫn nằm trong hạn 2.000 phút/tháng của GitHub Actions.
+
+Ba việc:
+  1. Bảng xếp hạng   — gọi thẳng API, nhanh
+  2. Lịch sử         — lưu trận vừa đá xong kèm người ghi bàn
+  3. Đội hình ra sân — ESPN chỉ công bố khoảng một tiếng trước giờ bóng lăn
+
+    python pipeline/refresh_live.py
 """
 
 from __future__ import annotations
@@ -18,9 +26,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import history as history_mod
 from config import load_env
 from model.extra_markets import player_scoring_rates, scorers_from_lineup
-from sources import espn, football_data_org
+from sources import espn, football_data_org, results as results_src
 from sources.odds_history import normalise
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -151,14 +160,114 @@ def refresh_league(league: str, rates: dict) -> int:
     return updated
 
 
+def league_results(league: str):
+    """Kết quả đã đá của giải, dùng để lưu lịch sử."""
+    import pandas as pd
+
+    if league == "champions-league":
+        rows = []
+        for m in football_data_org.season_matches("champions-league", CURRENT_SEASON):
+            if m["home_goals"] is None:
+                continue
+            rows.append({
+                "date": pd.Timestamp(m["date"]),
+                "home_team": m["home_team"], "away_team": m["away_team"],
+                "home_goals": m["home_goals"], "away_goals": m["away_goals"],
+                "result": ("H" if m["home_goals"] > m["away_goals"]
+                           else "A" if m["home_goals"] < m["away_goals"] else "D"),
+            })
+        return pd.DataFrame(rows, columns=[
+            "date", "home_team", "away_team", "home_goals", "away_goals", "result"])
+
+    return results_src.load_with_recent(
+        [league], list(range(CURRENT_SEASON - 1, CURRENT_SEASON + 1)), verbose=False
+    )
+
+
+def refresh_standings(league: str) -> bool:
+    """Ghi lại bảng xếp hạng nếu có thay đổi. Trả True khi có cập nhật."""
+    path = DATA / league / "standings.json"
+    if not path.exists():
+        return False
+
+    try:
+        rows = football_data_org.standings(league)
+    except Exception:
+        return False
+    if not rows:
+        return False
+
+    # Bảng của các giải quốc nội do build.py tự tính từ kết quả và có thêm
+    # trường form; không ghi đè bằng bản API vốn thiếu trường đó. Chỉ cập nhật
+    # phần số liệu, giữ nguyên form đã có.
+    try:
+        current = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        current = []
+    form_by_team = {normalise(r["team"]): r.get("form", []) for r in current}
+    for row in rows:
+        row["form"] = form_by_team.get(normalise(row["team"]), [])
+
+    if current and json.dumps(current, sort_keys=True) == json.dumps(rows, sort_keys=True):
+        return False
+
+    path.write_text(
+        json.dumps(rows, ensure_ascii=False, allow_nan=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    return True
+
+
+def refresh_history(league: str) -> int:
+    """Lưu các trận vừa đá xong vào lịch sử. Trả số trận vừa thêm."""
+    league_dir = DATA / league
+    if not (league_dir / "predictions.json").exists():
+        return 0
+    try:
+        results = league_results(league)
+    except Exception as exc:
+        print(f"  {league}: bỏ qua lịch sử ({type(exc).__name__})")
+        return 0
+    if results.empty:
+        return 0
+
+    details = espn.details_for_dates(league, espn.recent_days(7))
+    archived, added = history_mod.archive_finished(
+        league, league_dir, results, espn_details=details
+    )
+    if added:
+        (league_dir / "history.json").write_text(
+            json.dumps(archived, ensure_ascii=False, allow_nan=False,
+                       separators=(",", ":")),
+            encoding="utf-8",
+        )
+    return added
+
+
 def main() -> None:
     load_env()
-    total = 0
+    lineups = tables = archived = 0
+
     for league in ("premier-league", "la-liga", "champions-league"):
-        rates = scoring_rates(league)
-        total += refresh_league(league, rates)
-    print(f"Cập nhật đội hình cho {total} trận" if total
-          else "Chưa trận nào công bố đội hình")
+        if refresh_standings(league):
+            tables += 1
+            print(f"  {league}: bảng xếp hạng có thay đổi")
+
+        added = refresh_history(league)
+        if added:
+            archived += added
+            print(f"  {league}: lưu {added} trận vừa đá xong")
+
+        lineups += refresh_league(league, scoring_rates(league))
+
+    parts = []
+    if tables:
+        parts.append(f"{tables} bảng xếp hạng")
+    if archived:
+        parts.append(f"{archived} trận vào lịch sử")
+    if lineups:
+        parts.append(f"{lineups} đội hình")
+    print("Đã cập nhật: " + ", ".join(parts) if parts else "Không có gì thay đổi")
 
 
 if __name__ == "__main__":

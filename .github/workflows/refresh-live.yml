@@ -1,4 +1,4 @@
-name: Cập nhật đội hình ra sân
+name: Cập nhật nhanh sau trận
 
 # Chạy mỗi giờ. Cần tần suất này vì ESPN chỉ công bố đội hình khoảng MỘT TIẾNG
 # trước giờ bóng lăn — lịch 4 lần/ngày của update-data.yml gần như luôn bỏ lỡ.
@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: lineups
+  group: refresh-live
   cancel-in-progress: true
 
 permissions:
@@ -35,10 +35,10 @@ jobs:
       - name: Cài thư viện
         run: pip install -r pipeline/requirements.txt
 
-      - name: Lấy đội hình
+      - name: Cập nhật BXH, lịch sử và đội hình
         env:
           FOOTBALL_DATA_ORG_KEY: ${{ secrets.FOOTBALL_DATA_ORG_KEY }}
-        run: python pipeline/refresh_lineups.py
+        run: python pipeline/refresh_live.py
 
       - name: Commit nếu có đội hình mới
         run: |

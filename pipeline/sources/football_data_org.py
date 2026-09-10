@@ -45,6 +45,13 @@ MIN_INTERVAL_SECONDS = 6.5
 _last_call_at = 0.0
 
 
+def _is_current_season(season: int) -> bool:
+    """Mùa giải châu Âu chạy từ tháng 7 năm N đến tháng 6 năm N+1."""
+    today = datetime.now(timezone.utc).date()
+    running = today.year if today.month >= 7 else today.year - 1
+    return season >= running
+
+
 class MissingApiKey(RuntimeError):
     """Nêu rõ cách khắc phục thay vì để KeyError khó hiểu."""
 
@@ -155,7 +162,12 @@ def standings(league: str) -> list[dict]:
     if league not in COMPETITIONS:
         raise KeyError(f"Giải không được hỗ trợ: {league!r}")
 
-    payload = _get(f"competitions/{COMPETITIONS[league]}/standings", cache_hours=12.0)
+    # Cache RẤT ngắn: bảng xếp hạng là thứ đổi ngay sau mỗi trận, và đây chính
+    # là dữ liệu người dùng mở app để xem. Trước đây để 12 giờ, hệ quả là build
+    # lúc 21:38 vẫn đọc bản cache từ 10:26 và bỏ lỡ toàn bộ vòng đấu buổi tối.
+    # Giới hạn của gói miễn phí là 10 request/PHÚT chứ không theo ngày, nên gọi
+    # lại thường xuyên hoàn toàn thoải mái.
+    payload = _get(f"competitions/{COMPETITIONS[league]}/standings", cache_hours=0.5)
 
     for table in payload.get("standings", []):
         # Bỏ qua bảng sân nhà/sân khách, chỉ lấy bảng tổng.
@@ -235,10 +247,12 @@ def season_matches(league: str, season: int, finished_only: bool = True) -> list
     if league not in COMPETITIONS:
         raise KeyError(f"Giải không được hỗ trợ: {league!r}")
 
+    # Mùa đã kết thúc thì kết quả cố định vĩnh viễn; mùa đang diễn ra đổi sau
+    # mỗi vòng nên phải hỏi lại thường xuyên.
     payload = _get(
         f"competitions/{COMPETITIONS[league]}/matches",
         {"season": season},
-        cache_hours=24.0,
+        cache_hours=0.5 if _is_current_season(season) else 24 * 30,
     )
 
     out = []

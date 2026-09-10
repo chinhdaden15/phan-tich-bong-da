@@ -116,6 +116,28 @@ async function loadJSON(path) {
   return data;
 }
 
+/**
+ * Hiển thị dữ liệu cũ bao lâu rồi.
+ *
+ * Cần thiết vì app đọc file tĩnh: bấm nút cập nhật chỉ tải lại file, chứ không
+ * chạy được pipeline. Nếu không nói rõ dữ liệu dựng lúc nào thì người dùng bấm
+ * nút mà không biết có gì đổi hay không.
+ */
+function showFreshness(generatedAt) {
+  const node = document.getElementById("freshness");
+  if (!node || !generatedAt) return;
+
+  const built = new Date(generatedAt);
+  const mins = Math.round((Date.now() - built.getTime()) / 60000);
+  const label = mins < 2 ? "vừa xong"
+    : mins < 60 ? `${mins} phút trước`
+    : mins < 60 * 24 ? `${Math.round(mins / 60)} giờ trước`
+    : `${Math.round(mins / 1440)} ngày trước`;
+
+  node.textContent = `Dữ liệu ${label}`;
+  node.classList.toggle("stale", mins > 150);
+}
+
 const el = (id) => document.getElementById(id);
 const view = () => el("view");
 
@@ -952,6 +974,7 @@ async function init() {
     state.league = index.leagues[0]?.id;
     if (!state.league) throw new Error("Chưa có giải nào trong dữ liệu");
     renderLeagueTabs();
+    showFreshness(index.generated_at);
     await render();
   } catch (err) {
     view().innerHTML = `<div class="empty">Chưa có dữ liệu.<br>
@@ -977,10 +1000,37 @@ async function init() {
 
   el("refreshBtn").addEventListener("click", async () => {
     const btn = el("refreshBtn");
+    const node = el("freshness");
     btn.classList.add("spinning");
+
+    const before = state.cache.get(`${DATA}/index.json`)?.generated_at;
     state.cache.clear();
-    await render();
-    btn.classList.remove("spinning");
+
+    try {
+      const index = await loadJSON(`${DATA}/index.json`);
+      state.leagues = index.leagues;
+      if (!state.leagues.some((l) => l.id === state.league)) {
+        state.league = state.leagues[0]?.id;
+        renderLeagueTabs();
+      }
+      await render();
+      showFreshness(index.generated_at);
+
+      // Nói rõ có dữ liệu mới hay không, thay vì chỉ quay rồi im lặng.
+      const changed = before && before !== index.generated_at;
+      if (node) {
+        node.classList.add("fresh-flash");
+        if (!changed) node.textContent = "Đã là bản mới nhất";
+        setTimeout(() => {
+          node.classList.remove("fresh-flash");
+          showFreshness(index.generated_at);
+        }, 2200);
+      }
+    } catch (err) {
+      if (node) node.textContent = "Không tải được — kiểm tra mạng";
+    } finally {
+      btn.classList.remove("spinning");
+    }
   });
 
   if ("serviceWorker" in navigator) {

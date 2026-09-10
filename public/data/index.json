@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-09T21:38:33+00:00",
+  "generated_at": "2026-09-10T03:21:41+00:00",
   "leagues": [
     {
       "id": "premier-league",
@@ -44,31 +44,31 @@
       "season": 2026,
       "fixtures": 6,
       "teams": 36,
-      "history": 6,
+      "history": 10,
       "accuracy": {
-        "matches": 6,
-        "top_pick_correct": 5,
-        "top_pick_accuracy": 0.8333,
-        "mean_brier": 0.4446,
+        "matches": 10,
+        "top_pick_correct": 9,
+        "top_pick_accuracy": 0.9,
+        "mean_brier": 0.3553,
         "score_exact": {
-          "checked": 6,
-          "correct": 1,
-          "accuracy": 0.1667
+          "checked": 10,
+          "correct": 2,
+          "accuracy": 0.2
         },
         "by_signal_strength": {
           "rõ": {
-            "matches": 1,
-            "correct": 1,
+            "matches": 2,
+            "correct": 2,
             "accuracy": 1.0
           },
           "vừa": {
-            "matches": 1,
-            "correct": 1,
+            "matches": 3,
+            "correct": 3,
             "accuracy": 1.0
           },
           "mơ hồ": {
-            "matches": 2,
-            "correct": 2,
+            "matches": 3,
+            "correct": 3,
             "accuracy": 1.0
           }
         }
