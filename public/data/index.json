@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-12T15:27:56+00:00",
+  "generated_at": "2026-09-12T19:39:11+00:00",
   "refresh": {
     "interval_hours": 3,
     "minute_utc": 5,
@@ -10,35 +10,65 @@
       "id": "premier-league",
       "name": "Ngoại hạng Anh",
       "season": 2026,
-      "fixtures": 20,
+      "fixtures": 13,
       "teams": 20,
-      "history": 0,
+      "history": 6,
       "accuracy": {
-        "matches": 0
+        "matches": 6,
+        "top_pick_correct": 0,
+        "top_pick_accuracy": 0.0,
+        "mean_brier": 0.9584,
+        "score_exact": {
+          "checked": 6,
+          "correct": 0,
+          "accuracy": 0.0
+        },
+        "by_signal_strength": {
+          "rõ": {
+            "matches": 1,
+            "correct": 0,
+            "accuracy": 0.0
+          },
+          "vừa": {
+            "matches": 1,
+            "correct": 0,
+            "accuracy": 0.0
+          },
+          "mơ hồ": {
+            "matches": 2,
+            "correct": 0,
+            "accuracy": 0.0
+          }
+        }
       }
     },
     {
       "id": "la-liga",
       "name": "La Liga",
       "season": 2026,
-      "fixtures": 27,
+      "fixtures": 24,
       "teams": 20,
-      "history": 2,
+      "history": 4,
       "accuracy": {
-        "matches": 2,
+        "matches": 4,
         "top_pick_correct": 1,
-        "top_pick_accuracy": 0.5,
-        "mean_brier": 0.5764,
+        "top_pick_accuracy": 0.25,
+        "mean_brier": 0.7628,
         "score_exact": {
-          "checked": 2,
+          "checked": 4,
           "correct": 0,
           "accuracy": 0.0
         },
         "by_signal_strength": {
-          "mơ hồ": {
+          "vừa": {
             "matches": 1,
+            "correct": 0,
+            "accuracy": 0.0
+          },
+          "mơ hồ": {
+            "matches": 2,
             "correct": 1,
-            "accuracy": 1.0
+            "accuracy": 0.5
           }
         }
       }
@@ -98,6 +128,5 @@
       "configured": true,
       "purpose": "kết quả và lịch, không cần key"
     }
-  },
-  "last_light_refresh": "2026-09-12T15:27:56+00:00"
+  }
 }
