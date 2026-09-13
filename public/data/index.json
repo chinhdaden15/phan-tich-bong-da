@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-13T06:47:01+00:00",
+  "generated_at": "2026-09-13T13:54:53+00:00",
   "refresh": {
     "interval_hours": 3,
     "minute_utc": 5,
@@ -10,7 +10,7 @@
       "id": "premier-league",
       "name": "Ngoại hạng Anh",
       "season": 2026,
-      "fixtures": 13,
+      "fixtures": 12,
       "teams": 20,
       "history": 6,
       "accuracy": {
@@ -46,7 +46,7 @@
       "id": "la-liga",
       "name": "La Liga",
       "season": 2026,
-      "fixtures": 24,
+      "fixtures": 23,
       "teams": 20,
       "history": 4,
       "accuracy": {
