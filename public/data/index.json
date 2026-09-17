@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-17T14:28:02+00:00",
+  "generated_at": "2026-09-17T20:33:52+00:00",
   "refresh": {
     "interval_hours": 3,
     "minute_utc": 5,
@@ -46,18 +46,18 @@
       "id": "la-liga",
       "name": "La Liga",
       "season": 2026,
-      "fixtures": 12,
+      "fixtures": 10,
       "teams": 20,
-      "history": 11,
+      "history": 12,
       "accuracy": {
-        "matches": 11,
-        "top_pick_correct": 4,
-        "top_pick_accuracy": 0.3636,
-        "mean_brier": 0.6438,
+        "matches": 12,
+        "top_pick_correct": 5,
+        "top_pick_accuracy": 0.4167,
+        "mean_brier": 0.6084,
         "score_exact": {
-          "checked": 11,
+          "checked": 12,
           "correct": 1,
-          "accuracy": 0.0909
+          "accuracy": 0.0833
         },
         "by_signal_strength": {
           "rõ": {
@@ -71,9 +71,9 @@
             "accuracy": 0.5
           },
           "mơ hồ": {
-            "matches": 4,
-            "correct": 1,
-            "accuracy": 0.25
+            "matches": 5,
+            "correct": 2,
+            "accuracy": 0.4
           }
         }
       }
