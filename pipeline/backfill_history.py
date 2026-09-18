@@ -140,7 +140,7 @@ def main() -> None:
 
         try:
             details = espn.details_for_dates(league, espn.recent_days(14))
-            archived, added = history_mod.archive_finished(
+            archived, added, _mended = history_mod.archive_finished(
                 league, league_dir, results, espn_details=details
             )
         finally:

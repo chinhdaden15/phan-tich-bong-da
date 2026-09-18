@@ -110,6 +110,16 @@ def _clean(df: pd.DataFrame, league: str, start_year: int) -> pd.DataFrame:
         axis=1,
     )
 
+    # Số quả phạt góc. Có từ khoảng mùa 2000-01 trở đi và gần như không thiếu,
+    # nhưng vẫn để NA khi vắng thay vì điền 0 — điền 0 sẽ kéo tụt trung bình
+    # của đội và làm hỏng mô hình góc.
+    if "HC" in df.columns and "AC" in df.columns:
+        out["home_corners"] = pd.to_numeric(df["HC"], errors="coerce").values
+        out["away_corners"] = pd.to_numeric(df["AC"], errors="coerce").values
+    else:
+        out["home_corners"] = pd.NA
+        out["away_corners"] = pd.NA
+
     # Lấy bộ kèo đóng cửa sắc nhất mà mùa đó có
     for cols in CLOSING_ODDS_SETS:
         if all(c in df.columns for c in cols):

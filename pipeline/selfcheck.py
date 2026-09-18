@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import subprocess
 from pathlib import Path
 
@@ -31,6 +32,7 @@ REQUIRED_JS = [
     "scorersSection", "marketSection", "openSheet", "closeSheet", "enableSwipeToClose",
     "renderHistory", "zoneClass", "renderStandings", "renderStrength", "renderAbout",
     "render", "renderLeagueTabs", "init",
+    "crestKey", "crestMap", "crestImg", "cornersSection",
 ]
 
 # Trường bắt buộc trong mỗi bản ghi dự đoán.
@@ -49,6 +51,16 @@ REQUIRED_PREDICTION_FIELDS = [
 REQUIRED_STANDINGS_FIELDS = [
     "position", "team", "played", "points", "goal_difference", "form",
 ]
+
+
+# Trường bắt buộc trong mỗi bản ghi lịch sử.
+#
+# Danh sách này ra đời từ hai lỗi thật cùng nằm ở đây: tỷ số bị lưu lúc trận
+# đang đá (Bayern thắng 5-0 bị ghi thành 0-0 vì đó là tỷ số hiệp 1), và cửa
+# đã nêu không được chấm theo đúng loại kèo của nó (trận 2-1 với cửa "Tài 2.5"
+# bị đánh dấu sai). Cả hai đều âm thầm, không báo lỗi ở đâu cả.
+REQUIRED_HISTORY_FIELDS = ["home_team", "away_team", "fixture", "prediction", "actual", "grade"]
+REQUIRED_ACTUAL_FIELDS = ["home_goals", "away_goals", "result"]
 
 
 class CheckFailed(RuntimeError):
@@ -157,6 +169,49 @@ def check_standings(errors: list[str]) -> None:
                     break     # một lỗi mỗi dòng là đủ để biết
 
 
+def check_history(errors: list[str]) -> None:
+    """
+    Mỗi bản ghi lịch sử phải đủ trường, và điểm phải khớp với tỷ số đã lưu.
+
+    Phần chấm lại tại chỗ là quan trọng nhất: nó bắt được trường hợp cửa đã
+    nêu bị đánh đúng/sai theo luật của một loại kèo KHÁC. Đó chính là lỗi đã
+    khiến trận 2-1 với cửa "Tài 2.5" hiện dấu sai.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from history import _pick_correct
+
+    index_file = PUBLIC / "data" / "index.json"
+    if not index_file.exists():
+        return
+
+    index = json.loads(index_file.read_text(encoding="utf-8"))
+    for entry in index.get("leagues", []):
+        league = entry["id"]
+        path = PUBLIC / "data" / league / "history.json"
+        if not path.exists():
+            continue
+        for i, row in enumerate(json.loads(path.read_text(encoding="utf-8"))):
+            missing = [f for f in REQUIRED_HISTORY_FIELDS if f not in row]
+            if missing:
+                errors.append(f"{league}: lịch sử [{i}] thiếu {missing[0]!r}")
+                continue
+
+            actual = row["actual"] or {}
+            for field in REQUIRED_ACTUAL_FIELDS:
+                if actual.get(field) is None:
+                    errors.append(f"{league}: lịch sử [{i}] kết quả thiếu {field!r}")
+                    break
+            else:
+                grade = row["grade"] or {}
+                key = ((row["prediction"] or {}).get("signal") or {}).get("best", {}).get("key")
+                expected = _pick_correct(key, actual["home_goals"], actual["away_goals"]) if key else None
+                if expected is not None and grade.get("signal_correct") != expected:
+                    errors.append(
+                        f"{league}: lịch sử [{i}] chấm sai cửa {key!r} — "
+                        f"{actual['home_goals']}-{actual['away_goals']} phải là {expected}"
+                    )
+
+
 def run(verbose: bool = True) -> list[str]:
     """Chạy toàn bộ kiểm tra. Trả về danh sách lỗi, rỗng nghĩa là đạt."""
     errors: list[str] = []
@@ -164,6 +219,7 @@ def run(verbose: bool = True) -> list[str]:
     check_json(errors)
     check_predictions(errors)
     check_standings(errors)
+    check_history(errors)
 
     if verbose:
         if errors:
@@ -174,7 +230,8 @@ def run(verbose: bool = True) -> list[str]:
                 print(f"  ... và {len(errors) - 15} lỗi nữa")
         else:
             print("\nTự kiểm tra: đạt "
-                  f"({len(REQUIRED_JS)} hàm, JSON hợp lệ, dự đoán và bảng xếp hạng đủ trường)")
+                  f"({len(REQUIRED_JS)} hàm, JSON hợp lệ, dự đoán/bảng xếp hạng đủ trường, "
+                  "lịch sử chấm điểm đúng)")
     return errors
 
 

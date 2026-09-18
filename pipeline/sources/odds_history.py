@@ -178,6 +178,15 @@ TEAM_ALIASES = {
     "alaves": "deportivo alaves",
     "sp gijon": "sporting gijon",
     "santander": "racing santander",
+    # Tên ESPN dùng ở cúp châu Âu, viết khác nguồn kết quả chính.
+    "bayern munich": "bayern munchen",
+    "slavia prague": "slavia praha",
+    "sporting cp": "sporting clube de portugal",
+    "aek athens": "aek athen",
+    "inter milan": "internazionale",
+    # ESPN gọi Deportivo La Coruña là "Deportivo", mà _NOISE lại xoá đúng từ
+    # đó nên tên rút về chuỗi rỗng. Chuyển thẳng sang dạng sau khi lọc.
+    "deportivo": "la coruna",
 }
 
 # "and" nằm trong danh sách vì nguồn kèo viết "Brighton and Hove Albion"
@@ -202,6 +211,12 @@ def normalise(name: str) -> str:
     s = unicodedata.normalize("NFKD", str(name))
     s = "".join(c for c in s if not unicodedata.combining(c))
     s = s.lower().strip()
+    # NFKD không tách được các chữ cái Bắc Âu/Đức vì chúng là ký tự độc lập
+    # chứ không phải chữ cái kèm dấu. Không xử lý riêng thì "Bodø/Glimt" thành
+    # "bod glimt" và không bao giờ khớp với "Bodo/Glimt" của ESPN.
+    for src, dst in (("ø", "o"), ("æ", "ae"), ("å", "a"), ("ß", "ss"),
+                     ("đ", "d"), ("ł", "l"), ("þ", "th")):
+        s = s.replace(src, dst)
     s = s.replace("&", " ").replace("'", "").replace(".", " ").replace("-", " ")
     s = re.sub(r"[^a-z0-9\s]", " ", s)
 

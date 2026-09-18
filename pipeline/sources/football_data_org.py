@@ -237,6 +237,12 @@ def recent_results(league: str, days_back: int = 400) -> list[dict]:
     return [m for m in out if m["home_team"] and m["away_team"]]
 
 
+# Trạng thái mà football-data.org coi là đã chốt kết quả. Mọi trạng thái khác
+# (IN_PLAY, PAUSED, SCHEDULED, TIMED, SUSPENDED, POSTPONED, CANCELLED) đều
+# KHÔNG được dùng làm kết quả chung cuộc, kể cả khi đã có tỷ số.
+FINAL_STATUSES = frozenset({"FINISHED", "AWARDED"})
+
+
 def season_matches(league: str, season: int, finished_only: bool = True) -> list[dict]:
     """
     Toàn bộ trận của một mùa cụ thể.
@@ -259,7 +265,14 @@ def season_matches(league: str, season: int, finished_only: bool = True) -> list
     for m in payload.get("matches", []):
         full_time = ((m.get("score") or {}).get("fullTime") or {})
         home, away = full_time.get("home"), full_time.get("away")
-        played = home is not None and away is not None
+        status = m.get("status")
+        # QUAN TRỌNG: score.fullTime được điền NGAY TRONG LÚC trận đang đá, nên
+        # "có tỷ số" không đồng nghĩa với "đã đá xong". Trước đây chỗ này chỉ
+        # kiểm tra tỷ số khác None, khiến một trận đang nghỉ giữa hiệp bị ghi
+        # vào lịch sử với tỷ số hiệp 1 rồi khoá luôn — Bayern thắng Bodø/Glimt
+        # 5-0 bị lưu thành 0-0. Chỉ trạng thái kết thúc mới được coi là chung
+        # cuộc.
+        played = home is not None and away is not None and status in FINAL_STATUSES
 
         if finished_only and not played:
             continue

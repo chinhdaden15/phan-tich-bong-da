@@ -284,10 +284,12 @@ def refresh_history(league: str) -> int:
         return 0
 
     details = espn.details_for_dates(league, espn.recent_days(7))
-    archived, added = history_mod.archive_finished(
+    archived, added, mended = history_mod.archive_finished(
         league, league_dir, results, espn_details=details
     )
-    if added:
+    if mended:
+        print(f"  {league}: sửa lại {mended} bản ghi lịch sử")
+    if added or mended:
         (league_dir / "history.json").write_text(
             json.dumps(archived, ensure_ascii=False, allow_nan=False,
                        separators=(",", ":")),

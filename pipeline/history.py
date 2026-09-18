@@ -58,6 +58,44 @@ def _result_index(results: pd.DataFrame) -> dict[str, dict]:
     return index
 
 
+# Tăng số này mỗi khi cách chấm điểm đổi, để repair() chấm lại toàn bộ lịch sử
+# thay vì giữ nguyên điểm cũ tính theo luật đã lỗi thời.
+GRADE_VERSION = 2
+
+
+def _pick_correct(key: str, home_goals: int, away_goals: int) -> bool | None:
+    """
+    Cửa đã chọn có trúng không, xét đúng theo loại kèo của nó.
+
+    VÌ SAO CẦN: trước đây chỗ này chỉ chấm được 1X2, mọi cửa khác trả về None
+    rồi giao diện lại lấy tạm kết quả 1X2 ra thay thế. Hậu quả là một trận
+    2-1 với cửa đã chọn là "Tài 2.5" bị đánh dấu SAI, dù ba bàn rõ ràng là
+    tài — app chấm nhầm bằng việc đội nhà thắng hay thua.
+
+    Các mốc tài/xỉu đều là số lẻ .5 nên không bao giờ có trường hợp hoà mốc.
+    """
+    total = home_goals + away_goals
+
+    if key in ("home", "draw", "away"):
+        actual_key = ("home" if home_goals > away_goals
+                      else "away" if home_goals < away_goals else "draw")
+        return key == actual_key
+
+    if key.startswith("over_") or key.startswith("under_"):
+        try:
+            line = float(key.split("_", 1)[1])
+        except ValueError:
+            return None
+        return total > line if key.startswith("over_") else total < line
+
+    if key == "btts_yes":
+        return home_goals > 0 and away_goals > 0
+    if key == "btts_no":
+        return home_goals == 0 or away_goals == 0
+
+    return None
+
+
 def _grade(pred: dict, actual: dict) -> dict:
     """
     Chấm điểm một dự đoán đã có kết quả.
@@ -81,12 +119,14 @@ def _grade(pred: dict, actual: dict) -> dict:
     signal = pred.get("signal") or {}
     best = signal.get("best") or {}
 
-    # Kiểm tra riêng cửa mà app đã nêu trong phần nhận định — cửa đó có thể
-    # không phải 1X2 (ví dụ "Tài 2.5"), nên chỉ chấm khi nó thuộc nhóm 1X2.
+    # Chấm riêng cửa mà app đã nêu trong phần nhận định. Cửa đó thường KHÔNG
+    # phải 1X2 (hay gặp "Tài 2.5" hoặc "Cả hai đội ghi bàn"), nên phải chấm
+    # theo đúng luật của loại kèo đó.
     signal_key = best.get("key")
-    signal_correct = None
-    if signal_key in ("home", "draw", "away"):
-        signal_correct = signal_key == key
+    signal_correct = (
+        _pick_correct(signal_key, actual["home_goals"], actual["away_goals"])
+        if signal_key else None
+    )
 
     score_pred = (signal.get("score") or {}).get("top")
     score_correct = None
@@ -103,11 +143,13 @@ def _grade(pred: dict, actual: dict) -> dict:
     )
 
     return {
+        "v": GRADE_VERSION,
         "actual_result": letter,
         "top_pick": picked,
         "top_pick_correct": picked == key,
         "probability_of_actual": round(prob_actual, 4),
         "signal_pick": best.get("pick"),
+        "signal_market": best.get("market"),
         "signal_correct": signal_correct,
         "signal_strength": signal.get("strength"),
         "score_predicted": (
@@ -118,16 +160,105 @@ def _grade(pred: dict, actual: dict) -> dict:
     }
 
 
+def _stored_as_prediction(entry: dict) -> dict:
+    """
+    Dựng lại hình dạng mà _grade() cần từ một bản ghi đã nằm trong lịch sử.
+
+    Cần thiết vì lịch sử lưu bản rút gọn (outcome mô hình và outcome thị
+    trường tách riêng), còn _grade() nhận nguyên bản dự đoán của predictions
+    .json. Không có cầu nối này thì không thể chấm lại điểm sau khi sửa tỷ số.
+    """
+    pred = entry.get("prediction") or {}
+    market_outcome = pred.get("market_outcome")
+    return {
+        "prediction": {"outcome": pred.get("outcome") or {}},
+        "market": (
+            {"available": True, "prediction": {"outcome": market_outcome}}
+            if pred.get("from_market") and market_outcome
+            else {"available": False}
+        ),
+        "signal": pred.get("signal"),
+    }
+
+
+def repair(history: list[dict], index: dict[str, dict], espn_lookup) -> tuple[int, int]:
+    """
+    Sửa lại các bản ghi đã lưu: tỷ số sai và phần chi tiết còn thiếu.
+
+    VÌ SAO CẦN: trước đây việc lưu lịch sử chỉ chạy MỘT LẦN cho mỗi trận. Nếu
+    đúng khoảnh khắc đó nguồn kết quả chưa chốt hoặc ESPN chưa kịp công bố
+    người ghi bàn, bản ghi bị đóng băng vĩnh viễn ở trạng thái sai hoặc thiếu —
+    lần chạy sau thấy trận đã có trong lịch sử nên bỏ qua luôn.
+
+    Hậu quả thật đã gặp: bốn trận C1 ngày 10/09 bị lưu đúng bằng tỷ số HIỆP 1
+    (Bayern 0-0 Bodø/Glimt trong khi kết quả thật là 5-0), và 26/36 trận không
+    có người ghi bàn.
+
+    Trả về (số trận sửa tỷ số hoặc chấm lại, số trận bổ sung chi tiết).
+    """
+    fixed_scores = fixed_details = regraded = 0
+
+    for entry in history:
+        date = entry["fixture"]["date"]
+        home, away = entry["home_team"], entry["away_team"]
+        actual = entry.get("actual") or {}
+
+        truth = index.get(_key(date, home, away))
+        if truth and (
+            actual.get("home_goals") != truth["home_goals"]
+            or actual.get("away_goals") != truth["away_goals"]
+        ):
+            print(
+                f"  sửa tỷ số: {date} {home} {actual.get('home_goals')}-"
+                f"{actual.get('away_goals')} {away} -> "
+                f"{truth['home_goals']}-{truth['away_goals']}"
+            )
+            actual.update(truth)
+            entry["actual"] = actual
+            entry["grade"] = _grade(_stored_as_prediction(entry), truth)
+            fixed_scores += 1
+        elif (entry.get("grade") or {}).get("v") != GRADE_VERSION:
+            # Luật chấm điểm đã đổi — chấm lại bằng chính kết quả đang lưu,
+            # nếu không thì mọi trận cũ vẫn giữ điểm sai của luật trước.
+            entry["grade"] = _grade(_stored_as_prediction(entry), {
+                "home_goals": actual["home_goals"],
+                "away_goals": actual["away_goals"],
+                "result": actual["result"],
+            })
+            regraded += 1
+
+        # Chỉ dựa vào details_source: mảng goals rỗng là kết quả HỢP LỆ của
+        # một trận hoà 0-0, lấy nó làm dấu hiệu "chưa có dữ liệu" thì trận
+        # không bàn thắng nào sẽ bị tra lại ở mọi lần chạy về sau.
+        # "corners" not in actual: bản ghi lưu trước khi app biết đọc số góc.
+        # Kiểm tra bằng sự CÓ MẶT của khoá chứ không phải giá trị, vì None là
+        # câu trả lời hợp lệ cho trận mà ESPN không có thống kê.
+        if not actual.get("details_source") or "corners" not in actual:
+            detail = espn_lookup(date, home, away)
+            if detail and detail.get("source"):
+                actual["half_time"] = detail.get("half_time")
+                actual["goals"] = detail.get("goals", [])
+                actual["corners"] = detail.get("corners")
+                actual["details_source"] = detail.get("source")
+                entry["actual"] = actual
+                fixed_details += 1
+
+    if regraded:
+        print(f"  chấm lại điểm cho {regraded} trận theo luật mới")
+    return fixed_scores + regraded, fixed_details
+
+
 def archive_finished(
     league: str,
     league_dir: Path,
     results: pd.DataFrame,
     espn_details: dict | None = None,
-) -> tuple[list[dict], int]:
+) -> tuple[list[dict], int, int]:
     """
-    Chuyển các trận đã đá từ predictions.json sang history.json.
+    Chuyển các trận đã đá từ predictions.json sang history.json, đồng thời
+    sửa lại những bản ghi cũ bị sai tỷ số hoặc thiếu người ghi bàn.
 
-    Trả về (lịch sử sau khi cập nhật, số trận vừa thêm).
+    Trả về (lịch sử sau khi cập nhật, số trận vừa thêm, số bản ghi được sửa).
     """
     history_file = league_dir / "history.json"
     predictions_file = league_dir / "predictions.json"
@@ -136,12 +267,12 @@ def archive_finished(
     seen = {_key(h["fixture"]["date"], h["home_team"], h["away_team"]) for h in history}
 
     if not predictions_file.exists():
-        return history, 0
+        return history, 0, 0
 
     try:
         previous = json.loads(predictions_file.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return history, 0
+        return history, 0, 0
 
     index = _result_index(results)
     details = espn_details or {}
@@ -187,11 +318,16 @@ def archive_finished(
                     (pred.get("market") or {}).get("prediction", {}).get("outcome")
                 ),
                 "confidence": (pred.get("confidence") or {}).get("level"),
+                # Giữ lại dự đoán góc để đối chiếu với số góc thật. Cần thiết
+                # vì mô hình góc rất yếu (chỉ hơn tần suất chung ~1,5%), nên
+                # người dùng phải tự kiểm chứng được thay vì tin lời app.
+                "corners": (pred.get("corners") or {}).get("expected"),
             },
             "actual": {
                 **actual,
                 "half_time": detail.get("half_time"),
                 "goals": detail.get("goals", []),
+                "corners": detail.get("corners"),
                 "details_source": detail.get("source"),
             },
             "grade": _grade(pred, actual),
@@ -199,8 +335,13 @@ def archive_finished(
         seen.add(key)
         added += 1
 
+    # Chạy sau khi thêm mới, để trận vừa vào cũng được soát luôn.
+    fixed_scores, fixed_details = repair(history, index, espn_lookup)
+    if fixed_details:
+        print(f"  bổ sung chi tiết cho {fixed_details} trận đã lưu")
+
     history.sort(key=lambda h: h["fixture"]["date"], reverse=True)
-    return history[:MAX_HISTORY], added
+    return history[:MAX_HISTORY], added, fixed_scores + fixed_details
 
 
 def accuracy_summary(history: list[dict]) -> dict:

@@ -117,7 +117,7 @@ html, body {
 
 .teams { display: grid; gap: 5px; margin-bottom: 11px; }
 .team-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.team-name { font-size: 14.5px; font-weight: 550; }
+.team-name { font-size: 14.5px; font-weight: 550; flex: 1; min-width: 0; }
 .team-name.leader { color: var(--text); }
 .team-name.trailer { color: var(--text-dim); }
 .xg {
@@ -359,7 +359,8 @@ td.pts { font-weight: 700; color: var(--text); padding-right: 12px; }
 }
 .hist-score { display: grid; gap: 4px; margin-bottom: 9px; }
 .hist-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-.hist-row span { font-size: 14.5px; font-weight: 550; }
+.hist-row span { font-size: 14.5px; font-weight: 550; display: flex;
+  align-items: center; gap: 8px; min-width: 0; }
 .hist-row b { font-size: 16px; font-variant-numeric: tabular-nums; }
 .hist-row.won span, .hist-row.won b { color: var(--text); }
 .hist-row.lost span, .hist-row.lost b { color: var(--text-dim); }
@@ -399,3 +400,31 @@ td.pts { font-weight: 700; color: var(--text); padding-right: 12px; }
 .lineup-xi { font-size: 12px; color: var(--text-dim); line-height: 1.6; }
 .lineup-scorers { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--border); }
 .lineup-scorers .kv { padding: 5px 0; font-size: 13px; }
+
+/* ---------------- Logo đội ---------------- */
+/*
+ * Ảnh lấy thẳng từ crests.football-data.org. Ô giữ chỗ .crest-blank có cùng
+ * kích thước với ảnh thật, nên một đội thiếu logo không làm lệch hàng các đội
+ * còn lại — và cũng không gây nhảy layout khi ảnh tải xong.
+ */
+.crest {
+  /* inline-block chứ không phải inline: ô giữ chỗ là <span>, mà phần tử inline
+     bỏ qua width/height nên nó sẽ co về 0 và làm các dòng so le nhau. */
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  object-fit: contain;
+  border-radius: 3px;
+}
+.crest-blank { background: rgba(255, 255, 255, .05); }
+
+.sheet-title .crest { width: 24px; height: 24px; flex-basis: 24px; vertical-align: -6px; }
+.sheet-title .vs { color: var(--text-faint); font-weight: 500; margin: 0 2px; }
+
+/* Không dùng flex cho ô bảng: display:flex ghi đè display:table-cell và làm
+   vỡ việc canh cột. Căn theo đường cơ sở là đủ. */
+td.team-cell .crest { width: 18px; height: 18px; vertical-align: -4px; margin-right: 7px; }
+
+/* Cửa không đạt chuẩn tin cậy: làm mờ để không bị đọc nhầm thành lời khuyên. */
+.card-verdict-weak { opacity: .55; }

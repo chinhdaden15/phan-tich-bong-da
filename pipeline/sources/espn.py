@@ -177,8 +177,47 @@ def match_details(league: str, event_id: str) -> dict:
     return {
         "goals": goals,
         "half_time": {"home": ht_home, "away": ht_away} if goals else None,
+        "corners": _corners(payload),
         "source": "espn",
     }
+
+
+def _corners(payload: dict) -> dict | None:
+    """
+    Số phạt góc mỗi đội, lấy từ bảng thống kê của ESPN.
+
+    Lưu lại để sau này đối chiếu được dự đoán kèo góc với thực tế. Việc này
+    quan trọng hơn bình thường vì mô hình góc đo ra rất yếu (chỉ nhỉnh hơn
+    tần suất chung của giải khoảng 1,5%), nên người dùng cần tự kiểm chứng
+    trên chính các trận mình theo dõi thay vì tin lời quảng cáo.
+    """
+    teams = ((payload.get("boxscore") or {}).get("teams") or [])
+    out = {}
+    for t in teams:
+        side = (t.get("homeAway")
+                or (t.get("team") or {}).get("homeAway"))
+        for stat in (t.get("statistics") or []):
+            if stat.get("name") == "wonCorners":
+                try:
+                    value = int(float(stat.get("displayValue")))
+                except (TypeError, ValueError):
+                    continue
+                out[side] = value
+    # ESPN xếp đội nhà trước trong boxscore nhưng KHÔNG phải lúc nào cũng có
+    # khoá homeAway ở đây, nên lùi về thứ tự khi thiếu.
+    if set(out) != {"home", "away"}:
+        values = []
+        for t in teams:
+            for stat in (t.get("statistics") or []):
+                if stat.get("name") == "wonCorners":
+                    try:
+                        values.append(int(float(stat.get("displayValue"))))
+                    except (TypeError, ValueError):
+                        pass
+        if len(values) == 2:
+            return {"home": values[0], "away": values[1]}
+        return None
+    return out
 
 
 def _minute_value(display: str | None) -> float:

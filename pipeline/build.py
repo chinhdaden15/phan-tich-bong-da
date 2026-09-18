@@ -38,7 +38,8 @@ from model.predictor import (compute_base_rates, european_strength_table,
                             predict_european_match, predict_match,
                             predict_with_market, summarise_signal,
                             team_strength_table)
-from sources import (espn, european, football_data_org, odds_live,
+from model.corners import fit_corners
+from sources import (espn, european, football_data_org, historical, odds_live,
                      openfootball, results as results_src)
 from sources.odds_history import build_name_map, normalise
 
@@ -48,6 +49,12 @@ OUT_DIR = ROOT / "public" / "data"
 CURRENT_SEASON = 2026
 HISTORY_SEASONS = 6          # số mùa dùng để khớp mô hình
 FIXTURE_WINDOW_DAYS = 14     # dự đoán các trận trong ngần này ngày tới
+
+# Cúp châu Âu đá theo đợt cách nhau 2-3 tuần, nên cửa sổ 14 ngày để tab
+# Champions League trống trơn suốt phần lớn thời gian giữa hai lượt. Nới ra
+# 35 ngày thì luôn thấy được lượt kế tiếp. Giải quốc nội đá hằng tuần nên
+# không cần, và giữ 14 ngày ở đó cũng giúp file dự đoán nhẹ.
+CUP_FIXTURE_WINDOW_DAYS = 35
 
 # Tham số mô hình — chọn bằng dò lưới rồi KIỂM CHỨNG trên giai đoạn tách biệt.
 #
@@ -194,11 +201,13 @@ def build_league(league: str, no_remote: bool = False) -> dict:
     # Bỏ qua bước này thì mọi dự đoán đã đưa ra sẽ mất khi trận đá xong.
     league_dir = OUT_DIR / league
     espn_details = espn.details_for_dates(league, espn.recent_days(10))
-    archived, newly = history_mod.archive_finished(
+    archived, newly, mended = history_mod.archive_finished(
         league, league_dir, results, espn_details=espn_details
     )
     if newly:
         print(f"  lịch sử: +{newly} trận vừa đá xong (tổng {len(archived)})")
+    if mended:
+        print(f"  lịch sử: sửa lại {mended} bản ghi cũ")
 
     fit = fit_dixon_coles(
         results["home_team"], results["away_team"],
@@ -250,7 +259,12 @@ def build_league(league: str, no_remote: bool = False) -> dict:
         return now_utc.date() <= day <= horizon.date()
 
     window = fixtures[fixtures.apply(in_window, axis=1)] if len(fixtures) else fixtures
+    upcoming_kickoff = next_kickoff(fixtures["kickoff_utc"], now_utc) if len(fixtures) else None
     print(f"  lịch: {len(window)} trận trong {FIXTURE_WINDOW_DAYS} ngày tới")
+
+    # Kèo góc. Nguồn và mô hình hoàn toàn tách khỏi bàn thắng, nên hỏng ở đây
+    # cũng không ảnh hưởng phần còn lại.
+    corner_fit, corner_names = build_corner_model(league, seasons)
 
     rests = rest_days_map(results, window)
     base_rates = compute_base_rates(results)
@@ -313,6 +327,8 @@ def build_league(league: str, no_remote: bool = False) -> dict:
             "league": league,
         }
         pred["head_to_head"] = head_to_head(results, f["home_team"], f["away_team"])
+        pred["corners"] = corner_block(
+            corner_fit, corner_names, f["home_team"], f["away_team"])
         # Kèo hiệp 1 suy từ bàn thắng kỳ vọng cả trận. Dùng số đã hiệu chỉnh
         # theo kèo nếu có, vì nó chính xác hơn số thuần mô hình.
         _eg = pred["expected_goals"]
@@ -370,6 +386,7 @@ def build_league(league: str, no_remote: bool = False) -> dict:
         "standings": standings,
         "strength": strength,
         "predictions": predictions,
+        "next_fixture_utc": upcoming_kickoff,
         "history": archived,
         "accuracy": history_mod.accuracy_summary(archived),
         "model": {
@@ -427,11 +444,13 @@ def build_champions_league() -> dict:
     ])
     print(f"  kết quả C1 mùa này: {len(cl_results)} trận đã đá")
     espn_details = espn.details_for_dates("champions-league", espn.recent_days(10))
-    archived, newly = history_mod.archive_finished(
+    archived, newly, mended = history_mod.archive_finished(
         "champions-league", league_dir, cl_results, espn_details=espn_details
     )
     if newly:
         print(f"  lịch sử: +{newly} trận vừa đá xong (tổng {len(archived)})")
+    if mended:
+        print(f"  lịch sử: sửa lại {mended} bản ghi cũ")
 
     fit = fit_cross_league(
         pool["home_team"], pool["away_team"],
@@ -467,7 +486,7 @@ def build_champions_league() -> dict:
 
     fixtures = european.upcoming_champions_league(CURRENT_SEASON)
     now_utc = datetime.now(timezone.utc)
-    horizon = now_utc + timedelta(days=FIXTURE_WINDOW_DAYS)
+    horizon = now_utc + timedelta(days=CUP_FIXTURE_WINDOW_DAYS)
 
     def in_window(ko: str) -> bool:
         try:
@@ -477,7 +496,8 @@ def build_champions_league() -> dict:
         return now_utc <= t <= horizon
 
     window = fixtures[fixtures["kickoff_utc"].map(in_window)] if len(fixtures) else fixtures
-    print(f"  lịch: {len(window)} trận trong {FIXTURE_WINDOW_DAYS} ngày tới")
+    upcoming_kickoff = next_kickoff(fixtures["kickoff_utc"], now_utc) if len(fixtures) else None
+    print(f"  lịch: {len(window)} trận trong {CUP_FIXTURE_WINDOW_DAYS} ngày tới")
 
     # Quy đổi tên theo chính bảng dữ liệu đã huấn luyện, không dùng lại bảng
     # dựng từ các mùa C1 trước — mùa nào cũng có CLB lần đầu dự giải.
@@ -595,6 +615,7 @@ def build_champions_league() -> dict:
         "standings": standings,
         "strength": strength,
         "predictions": predictions,
+        "next_fixture_utc": upcoming_kickoff,
         "history": archived,
         "accuracy": history_mod.accuracy_summary(archived),
         "model": {
@@ -783,6 +804,94 @@ def dump_json(path: Path, payload, indent: int | None = None) -> None:
     )
 
 
+# Các mốc kèo góc mà nhà cái hay treo.
+CORNER_LINES = (8.5, 9.5, 10.5, 11.5)
+
+
+def build_corner_model(league: str, seasons: list[int]):
+    """
+    Khớp mô hình phạt góc, kèm bảng quy đổi tên đội sang tên mà app dùng.
+
+    Nguồn góc là football-data.co.uk, viết tên đội khác hẳn nguồn lịch thi đấu
+    ("Man City" so với "Manchester City FC"), nên phải có bảng quy đổi mới tra
+    được. Trả về (fit, mapping) hoặc (None, {}) khi không có dữ liệu — góc chỉ
+    là phần thêm, thiếu nó không được làm hỏng cả lần build.
+    """
+    try:
+        df = historical.load_leagues([league], seasons)
+    except Exception as exc:
+        print(f"  góc: bỏ qua ({type(exc).__name__}: {exc})")
+        return None, {}
+
+    df = df.dropna(subset=["home_corners", "away_corners"])
+    if len(df) < 500:
+        print(f"  góc: chỉ có {len(df)} trận, quá ít để khớp — bỏ qua")
+        return None, {}
+
+    fit = fit_corners(
+        df["home_team"], df["away_team"], df["home_corners"], df["away_corners"],
+        match_dates=df["date"].values, xi=MODEL_XI, ridge=MODEL_RIDGE,
+    )
+    print(f"  góc: {len(df)} trận, hội tụ={fit.converged}, "
+          f"sân nhà={fit.home_advantage:+.3f}")
+    return fit, {normalise(t): t for t in fit.teams}
+
+
+def corner_block(fit, source_names: dict, home: str, away: str) -> dict | None:
+    """Khối dự đoán góc cho một trận, hoặc None nếu thiếu dữ liệu một trong hai đội."""
+    if fit is None:
+        return None
+
+    mapping = build_name_map(set(source_names), {normalise(home), normalise(away)})
+
+    def resolve(name: str) -> str | None:
+        key = normalise(name)
+        for src_key, original in source_names.items():
+            if src_key == key or mapping.get(src_key) == key:
+                return original
+        return None
+
+    h, a = resolve(home), resolve(away)
+    if h is None or a is None:
+        return None
+
+    lam_h, lam_a = fit.expected_corners(h, a)
+    return {
+        "expected": {"home": round(lam_h, 2), "away": round(lam_a, 2),
+                     "total": round(lam_h + lam_a, 2)},
+        "over_under": {
+            str(line): {k: round(v, 4) for k, v in fit.over_under(h, a, line).items()}
+            for line in CORNER_LINES
+        },
+        "confidence": fit.confidence(h, a),
+    }
+
+
+def next_kickoff(kickoffs, now_utc: datetime) -> str | None:
+    """
+    Giờ bóng lăn của trận sắp tới gần nhất, kể cả ngoài cửa sổ dự đoán.
+
+    App dùng nó để thay câu "không có trận nào" bằng ngày cụ thể của lượt kế
+    tiếp — cần nhất ở Champions League, nơi hai lượt cách nhau vài tuần.
+    """
+    best = None
+    for raw in kickoffs:
+        if raw is None or (isinstance(raw, float) and pd.isna(raw)):
+            continue
+        try:
+            ko = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            continue
+        # Chuỗi thiếu phần múi giờ cho ra datetime "ngây thơ", mà so sánh nó
+        # với datetime có múi giờ sẽ ném TypeError và làm sập cả lần build chỉ
+        # vì một ô dữ liệu lệch định dạng. Coi như giờ UTC.
+        if ko.tzinfo is None:
+            ko = ko.replace(tzinfo=timezone.utc)
+        if ko >= now_utc and (best is None or ko < best):
+            best = ko
+    return best.isoformat().replace("+00:00", "Z") if best else None
+
+
 def write_index(out_dir: Path, built: list[dict]) -> None:
     """
     Ghi index.json, GIỮ LẠI các giải đã dựng từ lần chạy trước.
@@ -890,6 +999,11 @@ def main() -> None:
             "teams": len(payload["standings"]),
             "history": len(payload.get("history", [])),
             "accuracy": payload.get("accuracy", {}),
+            # Trận gần nhất trong tương lai, kể cả khi nằm NGOÀI cửa sổ dự
+            # đoán. Cúp châu Âu nghỉ 2-3 tuần giữa hai lượt, không có trường
+            # này thì app chỉ biết nói "không có trận nào" mà không nói được
+            # bao giờ mới có lại.
+            "next_fixture_utc": payload.get("next_fixture_utc"),
         })
 
     if not built:

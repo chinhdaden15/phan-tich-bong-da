@@ -389,6 +389,28 @@ CLARITY_MODERATE = 0.10
 # nguồn bất đồng nghĩa là có yếu tố mà ít nhất một bên chưa nắm được.
 DISAGREEMENT_LIMIT = 0.08
 
+# Sàn để một cửa được phép đứng tên "cửa đáng tin nhất trận".
+#
+# ĐO ĐƯỢC TRÊN 4.560 TRẬN có kèo thật của nhà cái (Ngoại hạng Anh và La Liga,
+# mùa 2020-21 đến 2025-26). Mỗi trận được dựng lại ĐÚNG bộ 11 cửa mà app đưa
+# ra: ma trận tỷ số ép khớp đồng thời 1X2 và tài/xỉu 2.5 của nhà cái, rồi suy
+# ra các mốc 1.5/3.5 và cửa cả hai đội ghi bàn.
+#
+#   - Luật cũ "vượt nền cao nhất, không có sàn": trúng 59,7%.
+#   - Thêm hai sàn dưới đây: trúng 65,8%. Ghép cặp trên cùng 3.451 trận mà cả
+#     hai luật đều nêu cửa: +2,5 điểm, khoảng tin cậy 95% [+1,6; +3,5] —
+#     không phải nhiễu.
+#
+#   - Quan trọng hơn: ở 24% số trận KHÔNG có cửa nào đạt chuẩn, luật cũ vẫn
+#     nêu một cửa và chỉ trúng 48,8% — tệ hơn tung đồng xu. Đó chính là những
+#     trận app từng khuyên "Hoà" ở mức 27%. Nay các trận đó được nói thẳng là
+#     không có cửa đáng tin.
+#
+# Vì sao không nâng sàn lên 60%: mức đó cho 72,4% nhưng im lặng ở 35% số trận.
+# 55% là điểm cân bằng — vẫn nói được ở ba phần tư số trận.
+PICK_PROBABILITY_FLOOR = 0.55
+PICK_CLARITY_FLOOR = 0.05
+
 
 def compute_base_rates(results) -> dict[str, float]:
     """
@@ -466,11 +488,33 @@ def summarise_signal(pred: dict, base_rates: dict[str, float] | None = None) -> 
         opt["clarity"] = round(opt["probability"] - base, 4)
         opt["probability"] = round(opt["probability"], 4)
 
-    options.sort(key=lambda o: o["clarity"], reverse=True)
-    best = options[0]
+    # Một cửa chỉ được đứng tên nếu vừa ĐỦ KHẢ NĂNG XẢY RA vừa KHÁC THƯỜNG.
+    # Thiếu vế đầu thì sinh ra lời khuyên kiểu "Hoà 27%" — cửa dễ thua hơn
+    # thắng. Thiếu vế sau thì luôn rơi vào "Tài 1.5 78%", đúng nhiều nhưng
+    # không nói lên điều gì vì trận nào cũng vậy.
+    qualified = [
+        o for o in options
+        if o["probability"] >= PICK_PROBABILITY_FLOOR
+        and o["clarity"] >= PICK_CLARITY_FLOOR
+    ]
+    confident = bool(qualified)
+
+    options.sort(
+        key=lambda o: (o in qualified, o["clarity"]) if qualified else (False, o["clarity"]),
+        reverse=True,
+    )
+
+    if confident:
+        best = max(qualified, key=lambda o: o["clarity"])
+    else:
+        # Không có cửa nào đạt chuẩn. Vẫn nêu cửa khả dĩ nhất để người dùng có
+        # cái mà nhìn, nhưng ghi rõ đây chỉ là tham khảo.
+        best = max(options, key=lambda o: o["probability"])
 
     # Xếp bậc ban đầu theo độ rõ, rồi hạ bậc theo các tín hiệu cảnh báo.
-    if best["clarity"] >= CLARITY_STRONG:
+    if not confident:
+        strength = "mơ hồ"
+    elif best["clarity"] >= CLARITY_STRONG:
         strength = "rõ"
     elif best["clarity"] >= CLARITY_MODERATE:
         strength = "vừa"
@@ -521,6 +565,7 @@ def summarise_signal(pred: dict, base_rates: dict[str, float] | None = None) -> 
 
     return {
         "best": best,
+        "confident": confident,
         "ranked": options[:6],
         "strength": strength,
         "warnings": warnings,

@@ -107,6 +107,52 @@ const escapeHtml = (s) =>
   String(s).replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+/* ---------------- Logo đội ---------------- */
+
+/**
+ * Logo lấy từ standings.json, vốn đã có sẵn trường crest của football-data.org
+ * cho mọi đội trong giải. Không cần thêm file nào, cũng không gọi thêm API.
+ *
+ * Tra theo tên đã chuẩn hoá chứ không so khớp nguyên văn: lịch thi đấu và bảng
+ * xếp hạng cùng một nguồn nên gần như luôn trùng, nhưng chuẩn hoá giúp chịu
+ * được khác biệt về dấu và hậu tố mà không làm hỏng gì.
+ */
+const crestCache = new Map();
+
+function crestKey(name) {
+  return String(name)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+async function crestMap(league) {
+  if (crestCache.has(league)) return crestCache.get(league);
+  const map = new Map();
+  try {
+    const rows = await loadJSON(`${DATA}/${league}/standings.json`);
+    rows.forEach((r) => { if (r.crest) map.set(crestKey(r.team), r.crest); });
+  } catch (err) {
+    // Thiếu logo không đáng để hỏng cả màn hình.
+  }
+  crestCache.set(league, map);
+  return map;
+}
+
+/** Map của giải đang xem, đặt sẵn để các hàm dựng HTML gọi được đồng bộ. */
+let crests = new Map();
+
+function crestImg(name) {
+  const url = crests.get(crestKey(name));
+  // Vẫn trả về ô rỗng cùng kích thước khi không có logo, để các dòng đội
+  // thẳng hàng với nhau thay vì so le.
+  if (!url) return `<span class="crest crest-blank" aria-hidden="true"></span>`;
+  return `<img class="crest" src="${escapeHtml(url)}" alt="" loading="lazy"
+    decoding="async" onerror="this.classList.add('crest-blank');this.removeAttribute('src')">`;
+}
+
 async function loadJSON(path) {
   if (state.cache.has(path)) return state.cache.get(path);
   const res = await fetch(path, { cache: "no-cache" });
@@ -198,11 +244,17 @@ function signalSection(p) {
   if (!sig) return "";
 
   const b = sig.best;
-  const verdict = {
-    "rõ": "Trận này có tín hiệu rõ.",
-    "vừa": "Trận này có tín hiệu vừa phải.",
-    "mơ hồ": "Trận này không có tín hiệu rõ ràng.",
-  }[sig.strength] || "";
+  // confident = có cửa vừa đủ khả năng xảy ra vừa khác thường. Khi không có,
+  // phải nói thẳng: đo trên 4.560 trận, luật cũ nêu bừa ở đúng những trận này
+  // chỉ trúng 48,8% — tệ hơn tung đồng xu.
+  const confident = sig.confident !== false;
+  const verdict = !confident
+    ? "Trận này không có cửa nào đáng tin."
+    : {
+        "rõ": "Trận này có tín hiệu rõ.",
+        "vừa": "Trận này có tín hiệu vừa phải.",
+        "mơ hồ": "Trận này có tín hiệu yếu.",
+      }[sig.strength] || "";
 
   const sc = sig.score;
   const mismatch = sig.score_matches_pick === false;
@@ -223,7 +275,7 @@ function signalSection(p) {
 
       <div class="verdict-grid">
         <div class="verdict-cell">
-          <span class="verdict-label">Kèo</span>
+          <span class="verdict-label">${confident ? "Kèo" : "Chỉ để tham khảo"}</span>
           <b class="verdict-value">${escapeHtml(b.pick)}</b>
           <span class="verdict-prob">${pct1(b.probability)}</span>
         </div>
@@ -241,11 +293,15 @@ function signalSection(p) {
         vượt 12%, nên con số gộp mới là mức đáng dùng.
       </div>` : ""}
 
-      <div class="verdict-note">
+      ${confident ? `<div class="verdict-note">
         Cửa "${escapeHtml(b.pick)}" bình thường xảy ra ${pct(b.base_rate)} số trận,
         ở đây là ${pct(b.probability)} — cao hơn mức thường
         ${(b.clarity * 100).toFixed(0)} điểm phần trăm.
-      </div>
+      </div>` : `<div class="verdict-note">
+        Không cửa nào vừa đạt <strong>55%</strong> khả năng vừa cao hơn mức
+        thường của giải <strong>5 điểm</strong>. Cửa nêu trên chỉ là cửa khả dĩ
+        nhất, không phải lời khuyên — trận kiểu này nên bỏ qua.
+      </div>`}
 
       ${mismatch ? `<div class="verdict-warn">⚠ Tỷ số khả dĩ nhất
         (${sc.top.home}–${sc.top.away}) không cùng hướng với cửa được chọn.
@@ -262,6 +318,36 @@ function signalSection(p) {
       <strong>bất kỳ</strong> của giải này. Chênh lệch so với nó mới là thông tin —
       "Tài 1.5" luôn khoảng 75% ở mọi trận nên dù cao vẫn không nói lên điều gì riêng.</div>
   `;
+}
+
+/**
+ * Kèo tài/xỉu phạt góc.
+ *
+ * Phần này CỐ TÌNH nói rõ mình yếu. Kiểm định cuốn chiếu trên 3.800 trận cho
+ * thấy mô hình góc chỉ giảm được 1,3-1,9% Brier so với việc đọc thẳng tần suất
+ * chung của giải, và tương quan giữa tổng góc dự đoán với tổng góc thật chỉ
+ * 0,18. Nói cách khác: số góc phần lớn là ngẫu nhiên. Đặt nó cạnh các kèo bàn
+ * thắng mà không ghi chú thì người đọc sẽ tưởng hai bên đáng tin như nhau.
+ */
+function cornersSection(p) {
+  const c = p.corners;
+  if (!c) return "";
+
+  const lines = Object.keys(c.over_under).sort((a, b) => a - b);
+  const rows = lines.map((L) => `
+    <div class="kv"><span>Tài ${L} góc</span><b>${pct1(c.over_under[L].over)}</b></div>`).join("");
+
+  return `
+    <div class="section-label">Phạt góc</div>
+    <div class="kv"><span>${escapeHtml(shortName(p.home_team))}</span><b>${c.expected.home.toFixed(1)}</b></div>
+    <div class="kv"><span>${escapeHtml(shortName(p.away_team))}</span><b>${c.expected.away.toFixed(1)}</b></div>
+    <div class="kv"><span>Tổng góc kỳ vọng</span><b>${c.expected.total.toFixed(1)}</b></div>
+    ${rows}
+    <div class="note">⚠ Kèo góc <strong>yếu hơn hẳn</strong> kèo bàn thắng. Kiểm
+      định trên 3.800 trận: mô hình chỉ nhỉnh hơn mức trung bình của giải khoảng
+      <strong>1,5%</strong>, tương quan giữa dự đoán và thực tế chỉ 0,18. Số góc
+      phần lớn do ngẫu nhiên quyết định. Hãy đọc mấy con số này như tham khảo,
+      đừng đặt ngang hàng với các cửa phía trên.</div>`;
 }
 
 /** Nguồn dự đoán tốt nhất cho một trận: thị trường nếu có kèo, nếu không thì mô hình. */
@@ -290,10 +376,12 @@ function matchCard(p, index) {
     </div>
     <div class="teams">
       <div class="team-row">
+        ${crestImg(p.home_team)}
         <span class="team-name ${homeLeads ? "leader" : "trailer"}">${escapeHtml(shortName(p.home_team))}</span>
         <span class="xg">${eg.home.toFixed(2)}</span>
       </div>
       <div class="team-row">
+        ${crestImg(p.away_team)}
         <span class="team-name ${!homeLeads ? "leader" : "trailer"}">${escapeHtml(shortName(p.away_team))}</span>
         <span class="xg">${eg.away.toFixed(2)}</span>
       </div>
@@ -308,8 +396,9 @@ function matchCard(p, index) {
       <span class="l-draw">Hoà <b>${pct(o.draw)}</b></span>
       <span class="l-away">Khách <b>${pct(o.away)}</b></span>
     </div>
-    ${p.signal ? `<div class="card-verdict">
-      <span>${escapeHtml(p.signal.best.pick)} <b>${pct(p.signal.best.probability)}</b></span>
+    ${p.signal ? `<div class="card-verdict${p.signal.confident === false ? " card-verdict-weak" : ""}">
+      <span>${p.signal.confident === false ? "tham khảo: " : ""}${escapeHtml(p.signal.best.pick)}
+        <b>${pct(p.signal.best.probability)}</b></span>
       ${p.signal.score ? `<span>${p.signal.score.top.home}–${p.signal.score.top.away}
         <b>${pct(p.signal.score.top.probability)}</b></span>` : ""}
     </div>` : ""}
@@ -319,7 +408,14 @@ function matchCard(p, index) {
 async function renderFixtures() {
   const preds = await loadJSON(`${DATA}/${state.league}/predictions.json`);
   if (!preds.length) {
-    view().innerHTML = `<div class="empty">Không có trận nào trong 14 ngày tới.</div>`;
+    // Champions League nghỉ 2-3 tuần giữa hai lượt, nên nói rõ bao giờ đá lại
+    // thay vì chỉ báo trống — nếu không, tab trông như hỏng.
+    const next = state.leagues.find((l) => l.id === state.league)?.next_fixture_utc;
+    const when = next ? new Date(next) : null;
+    view().innerHTML = `<div class="empty">Giải đang nghỉ giữa hai lượt.${
+      when && !isNaN(when) ? `<br><small>Lượt kế tiếp: ${when.toLocaleDateString("vi-VN", {
+        weekday: "long", day: "numeric", month: "numeric" })}</small>` : ""
+    }</div>`;
     return;
   }
 
@@ -492,7 +588,8 @@ function openSheet(p) {
     : "";
 
   el("sheetBody").innerHTML = `
-    <h2 class="sheet-title">${escapeHtml(shortName(p.home_team))} vs ${escapeHtml(shortName(p.away_team))}</h2>
+    <h2 class="sheet-title">${crestImg(p.home_team)}${escapeHtml(shortName(p.home_team))}
+      <span class="vs">vs</span> ${crestImg(p.away_team)}${escapeHtml(shortName(p.away_team))}</h2>
     <p class="sheet-sub">${escapeHtml(formatDay(dayKey(p.fixture)))}${formatTime(p.fixture) ? " · " + formatTime(p.fixture) : ""} · ${escapeHtml(roundLabel(p.fixture.round))}</p>
 
     <div class="probbar" style="height:8px">
@@ -533,6 +630,8 @@ function openSheet(p) {
     <div class="note">Kèo hiệp 1 do mô hình suy ra, không lấy từ nhà cái:
       ${pct(p.first_half.share_used)} số bàn của giải này được ghi trong hiệp 1.
       Đã đối chiếu với kèo thật ở một trận mẫu, lệch khoảng 1 điểm phần trăm.</div>` : ""}
+
+    ${cornersSection(p)}
 
     <div class="section-label">Ba tỷ số khả dĩ nhất</div>
     <div class="scores scores-3">${scores}</div>
@@ -710,27 +809,36 @@ async function renderHistory() {
           </div>`).join("")}</div>`
       : "";
 
-    const pick = g.signal_pick || g.top_pick;
-    const ok = g.signal_correct !== null && g.signal_correct !== undefined
-      ? g.signal_correct : g.top_pick_correct;
+    // Cửa hiển thị và dấu đúng/sai PHẢI cùng nói về một kèo. Trước đây khi
+    // cửa đã nêu là "Tài 2.5" mà signal_correct để trống, chỗ này lấy tạm kết
+    // quả 1X2 — nên trận 2-1 (ba bàn, tài rõ ràng) vẫn bị đánh dấu sai.
+    const hasSignal = g.signal_pick != null;
+    const pick = hasSignal ? g.signal_pick : g.top_pick;
+    const graded = hasSignal ? g.signal_correct : g.top_pick_correct;
+    const ok = graded === true;
+    const mark = graded == null ? "" : (graded ? " ✓" : " ✕");
 
     return `
     <article class="hist">
       <div class="hist-top">
         <span>${escapeHtml(formatDay(dayKey(r.fixture)))} · ${escapeHtml(roundLabel(r.fixture.round))}</span>
-        ${a.half_time ? `<span>HT ${a.half_time.home}–${a.half_time.away}</span>` : ""}
+        <span>${a.half_time ? `HT ${a.half_time.home}–${a.half_time.away}` : ""}${
+          a.corners && a.corners.home != null
+            ? `${a.half_time ? " · " : ""}Góc ${a.corners.home}–${a.corners.away}${
+                r.prediction?.corners
+                  ? ` (đoán ${r.prediction.corners.total.toFixed(1)})` : ""}` : ""}</span>
       </div>
       <div class="hist-score">
         <div class="hist-row ${homeWon ? "won" : "lost"}">
-          <span>${escapeHtml(shortName(r.home_team))}</span><b>${a.home_goals}</b>
+          <span>${crestImg(r.home_team)}${escapeHtml(shortName(r.home_team))}</span><b>${a.home_goals}</b>
         </div>
         <div class="hist-row ${awayWon ? "won" : "lost"}">
-          <span>${escapeHtml(shortName(r.away_team))}</span><b>${a.away_goals}</b>
+          <span>${crestImg(r.away_team)}${escapeHtml(shortName(r.away_team))}</span><b>${a.away_goals}</b>
         </div>
       </div>
       <div class="hist-check">
         <span class="dim">Dự đoán:</span>
-        <span class="${ok ? "ok" : "bad"}">${escapeHtml(pick || "—")} ${ok ? "✓" : "✕"}</span>
+        <span class="${graded == null ? "dim" : ok ? "ok" : "bad"}">${escapeHtml(pick || "—")}${mark}</span>
         ${g.score_predicted ? `<span class="dim">· tỷ số ${escapeHtml(g.score_predicted)}
           ${g.score_correct ? '<span class="ok">✓</span>' : ""}</span>` : ""}
         <span class="dim">· gán ${pct(g.probability_of_actual || 0)} cho kết quả thật</span>
@@ -785,7 +893,7 @@ async function renderStandings() {
   const body = rows.map((r) => `
     <tr class="${zoneClass(r.position, rows.length)}">
       <td class="pos">${r.position}</td>
-      <td>${escapeHtml(shortName(r.team))}</td>
+      <td class="team-cell">${crestImg(r.team)}${escapeHtml(shortName(r.team))}</td>
       <td class="num">${r.played}</td>
       <td class="num">${r.goal_difference > 0 ? "+" : ""}${r.goal_difference}</td>
       <td class="pts">${r.points}</td>
@@ -984,6 +1092,7 @@ const RENDERERS = {
 async function render() {
   view().innerHTML = `<div class="loading"><div class="spinner"></div><p>Đang tải…</p></div>`;
   try {
+    crests = await crestMap(state.league);
     await RENDERERS[state.tab]();
   } catch (err) {
     view().innerHTML = `<div class="empty">Không tải được dữ liệu.<br><small>${escapeHtml(err.message)}</small></div>`;
