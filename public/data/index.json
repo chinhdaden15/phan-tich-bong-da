@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-19T06:32:57+00:00",
+  "generated_at": "2026-09-19T13:23:17+00:00",
   "refresh": {
     "interval_hours": 3,
     "minute_utc": 5,
@@ -10,7 +10,7 @@
       "id": "premier-league",
       "name": "Ngoại hạng Anh",
       "season": 2026,
-      "fixtures": 9,
+      "fixtures": 8,
       "teams": 20,
       "history": 8,
       "accuracy": {
@@ -41,13 +41,13 @@
           }
         }
       },
-      "next_fixture_utc": "2026-09-19T11:30:00Z"
+      "next_fixture_utc": "2026-09-19T14:00:00Z"
     },
     {
       "id": "la-liga",
       "name": "La Liga",
       "season": 2026,
-      "fixtures": 9,
+      "fixtures": 8,
       "teams": 20,
       "history": 12,
       "accuracy": {
@@ -78,7 +78,7 @@
           }
         }
       },
-      "next_fixture_utc": "2026-09-19T12:00:00Z"
+      "next_fixture_utc": "2026-09-19T14:15:00Z"
     },
     {
       "id": "champions-league",
