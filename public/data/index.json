@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-20T15:57:49+00:00",
+  "generated_at": "2026-09-20T19:43:13+00:00",
   "refresh": {
     "interval_hours": 3,
     "minute_utc": 5,
@@ -10,18 +10,18 @@
       "id": "premier-league",
       "name": "Ngoại hạng Anh",
       "season": 2026,
-      "fixtures": 1,
+      "fixtures": 0,
       "teams": 20,
-      "history": 12,
+      "history": 13,
       "accuracy": {
-        "matches": 12,
+        "matches": 13,
         "top_pick_correct": 4,
-        "top_pick_accuracy": 0.3333,
-        "mean_brier": 0.786,
+        "top_pick_accuracy": 0.3077,
+        "mean_brier": 0.7919,
         "score_exact": {
-          "checked": 12,
-          "correct": 0,
-          "accuracy": 0.0
+          "checked": 13,
+          "correct": 1,
+          "accuracy": 0.0769
         },
         "by_signal_strength": {
           "rõ": {
@@ -35,30 +35,30 @@
             "accuracy": 0.6667
           },
           "mơ hồ": {
-            "matches": 7,
-            "correct": 2,
-            "accuracy": 0.2857
+            "matches": 8,
+            "correct": 3,
+            "accuracy": 0.375
           }
         }
       },
-      "next_fixture_utc": "2026-09-20T15:30:00Z"
+      "next_fixture_utc": "2026-10-10T11:30:00Z"
     },
     {
       "id": "la-liga",
       "name": "La Liga",
       "season": 2026,
-      "fixtures": 4,
+      "fixtures": 0,
       "teams": 20,
-      "history": 14,
+      "history": 17,
       "accuracy": {
-        "matches": 14,
-        "top_pick_correct": 6,
-        "top_pick_accuracy": 0.4286,
-        "mean_brier": 0.6125,
+        "matches": 17,
+        "top_pick_correct": 7,
+        "top_pick_accuracy": 0.4118,
+        "mean_brier": 0.6141,
         "score_exact": {
-          "checked": 14,
-          "correct": 1,
-          "accuracy": 0.0714
+          "checked": 17,
+          "correct": 2,
+          "accuracy": 0.1176
         },
         "by_signal_strength": {
           "rõ": {
@@ -67,18 +67,18 @@
             "accuracy": 1.0
           },
           "vừa": {
-            "matches": 4,
-            "correct": 3,
-            "accuracy": 0.75
+            "matches": 5,
+            "correct": 4,
+            "accuracy": 0.8
           },
           "mơ hồ": {
-            "matches": 9,
-            "correct": 5,
-            "accuracy": 0.5556
+            "matches": 11,
+            "correct": 7,
+            "accuracy": 0.6364
           }
         }
       },
-      "next_fixture_utc": "2026-09-20T14:15:00Z"
+      "next_fixture_utc": "2026-10-09T19:00:00Z"
     },
     {
       "id": "champions-league",
@@ -136,6 +136,5 @@
       "configured": true,
       "purpose": "kết quả và lịch, không cần key"
     }
-  },
-  "last_light_refresh": "2026-09-20T15:57:49+00:00"
+  }
 }
