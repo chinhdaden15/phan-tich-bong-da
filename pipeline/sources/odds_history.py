@@ -184,6 +184,10 @@ TEAM_ALIASES = {
     "sporting cp": "sporting clube de portugal",
     "aek athens": "aek athen",
     "inter milan": "internazionale",
+    # football-data.co.uk viết tắt rất gọn; hai tên dưới đây chặn việc ghép
+    # cho Inter và Sporting ở mô hình phạt góc của Champions League.
+    "inter": "internazionale milano",
+    "sp lisbon": "sporting clube portugal",
     # ESPN gọi Deportivo La Coruña là "Deportivo", mà _NOISE lại xoá đúng từ
     # đó nên tên rút về chuỗi rỗng. Chuyển thẳng sang dạng sau khi lọc.
     "deportivo": "la coruna",

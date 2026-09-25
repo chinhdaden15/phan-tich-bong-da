@@ -273,6 +273,113 @@ def devig_two_way(odds_over: float, odds_under: float) -> float:
     return float(a / (a + b))
 
 
+def handicap_two_way(matrix: np.ndarray, line: float) -> float:
+    """
+    Xác suất cửa ĐỘI NHÀ ăn kèo chấp, đã loại phần hoàn tiền.
+
+    Đây là con số so sánh được trực tiếp với giá hai cửa của nhà cái sau khi
+    khử biên, vì giá đó cũng không tính phần hoàn tiền.
+
+    Mốc phần tư (0.25, 0.75) là hai kèo gộp lại, mỗi bên nửa tiền: -0.25 nghĩa
+    là nửa tiền đặt mốc 0 và nửa tiền đặt mốc -0.5. Không tách ra thì mọi trận
+    có mốc phần tư — chiếm khoảng một nửa số trận — sẽ bị ghép sai.
+    """
+    frac = abs(line) % 1.0
+    if abs(frac - 0.25) < 1e-9 or abs(frac - 0.75) < 1e-9:
+        parts = [line - 0.25, line + 0.25]
+    else:
+        parts = [line]
+
+    win = lose = 0.0
+    for part in parts:
+        book = asian_handicap_probs(matrix, part)
+        win += book["home"] / len(parts)
+        lose += book["away"] / len(parts)
+
+    total = win + lose
+    return float(win / total) if total > 0 else 0.5
+
+
+def asian_handicap_probs(matrix: np.ndarray, line: float) -> dict[str, float]:
+    """Xác suất thắng/hoà/thua kèo chấp cho MỘT mốc đơn (không phải mốc phần tư)."""
+    n = matrix.shape[0]
+    adjusted = np.subtract.outer(np.arange(n), np.arange(n)).astype(float) + line
+    return {
+        "home": float(matrix[adjusted > 1e-9].sum()),
+        "push": float(matrix[np.abs(adjusted) <= 1e-9].sum()),
+        "away": float(matrix[adjusted < -1e-9].sum()),
+    }
+
+
+def calibrate_to_handicap(
+    ah_line: float,
+    target_cover: float,
+    target_over: float,
+    line: float = 2.5,
+    target_1x2: dict[str, float] | None = None,
+    rho: float = -0.05,
+    max_goals: int = MAX_GOALS_CAL,
+) -> tuple[float, float, float, bool, float]:
+    """
+    Giải (λ, μ) sao cho ma trận khớp KÈO CHẤP và kèo tài/xỉu của nhà cái.
+
+    VÌ SAO DÙNG KÈO CHẤP: hai thị trường này ràng buộc trực tiếp đúng hai đại
+    lượng cần biết. Kèo chấp ghim HIỆU (λ - μ): mốc chấp chính là mức cách biệt
+    mà nhà cái cho là 50/50. Kèo tài/xỉu ghim TỔNG (λ + μ). Biết hiệu và tổng
+    là biết luôn từng số.
+
+    So với đường cũ (1X2 + tài/xỉu), kèo chấp có biên lợi nhuận thấp hơn hẳn —
+    thường 2-3% so với 5-7% của 1X2 — nên con số rút ra từ nó ít bị méo bởi
+    phần biên mà nhà cái ăn, và phản ánh đánh giá thật của thị trường sát hơn.
+
+    target_1x2 nếu có sẽ thành ràng buộc BỔ SUNG (bình phương tối thiểu trên
+    cả bốn phương trình) chứ không thay thế; rho khi đó cũng thành ẩn.
+
+    Trả về (λ, μ, rho, hội_tụ, sai_số_lớn_nhất).
+    """
+    from scipy.optimize import least_squares
+    from scipy.stats import poisson
+
+    xs = np.arange(max_goals + 1)
+    totals_grid = np.add.outer(xs, xs)
+    fit_rho = target_1x2 is not None
+
+    def matrix_of(lam, mu, r):
+        mat = np.outer(poisson.pmf(xs, lam), poisson.pmf(xs, mu))
+        tau = np.ones_like(mat)
+        tau[0, 0] = 1.0 - lam * mu * r
+        tau[0, 1] = 1.0 + lam * r
+        tau[1, 0] = 1.0 + mu * r
+        tau[1, 1] = 1.0 - r
+        mat = np.clip(mat * tau, 0.0, None)
+        total = mat.sum()
+        return mat / total if total > 0 else mat
+
+    def residuals(params):
+        lam, mu = np.exp(params[0]), np.exp(params[1])
+        r = params[2] if fit_rho else rho
+        mat = matrix_of(lam, mu, r)
+
+        out = [
+            handicap_two_way(mat, ah_line) - target_cover,
+            float(mat[totals_grid > line].sum()) - target_over,
+        ]
+        if fit_rho:
+            diff = np.subtract.outer(xs, xs)
+            out += [
+                float(mat[diff > 0].sum()) - target_1x2["home"],
+                float(mat[diff == 0].sum()) - target_1x2["draw"],
+            ]
+        return out
+
+    start = [np.log(1.4), np.log(1.2)] + ([rho] if fit_rho else [])
+    result = least_squares(residuals, start, method="lm", max_nfev=600)
+    lam, mu = float(np.exp(result.x[0])), float(np.exp(result.x[1]))
+    r = float(result.x[2]) if fit_rho else rho
+    err = float(np.max(np.abs(residuals(result.x))))
+    return lam, mu, r, bool(result.success), err
+
+
 def calibrate_to_market_full(
     target_1x2: dict[str, float],
     target_over: float,

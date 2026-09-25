@@ -86,7 +86,11 @@ def fetch_odds(league: str, cache_hours: float = 11.0, timeout: int = 30) -> lis
             # Mỗi thị trường tốn thêm 1 lượt quota. Pipeline chạy 4 lần/ngày
             # để kết quả trận luôn mới, nhưng cache 11 tiếng ở đây khiến kèo
             # chỉ thực sự được gọi khoảng 2 lần/ngày -> 360 lượt/tháng.
-            "markets": "h2h,totals",
+            # spreads = kèo chấp châu Á. Đây là kèo được đặt nhiều nhất ở
+            # Việt Nam, và trước đây app không hề hiển thị nó. Mỗi thị trường
+            # tốn thêm một lượt quota; với cache 11 tiếng thì cả ba thị trường
+            # vẫn chỉ khoảng 540 lượt/tháng, dư trong hạn miễn phí.
+            "markets": "h2h,totals,spreads",
             "oddsFormat": "decimal",
         },
         timeout=timeout,
@@ -115,10 +119,27 @@ def _parse(payload: list, league: str) -> list[dict]:
         collected = {"home": [], "draw": [], "away": []}
         preferred = {}
         totals = {}   # mốc tài/xỉu -> danh sách (giá tài, giá xỉu)
+        spreads = {}  # mốc chấp (theo đội nhà) -> danh sách (giá nhà, giá khách)
+        spread_preferred = {}
 
         for book in event.get("bookmakers", []):
             key = book.get("key", "")
             for market in book.get("markets", []):
+                if market.get("key") == "spreads":
+                    home_price = away_price = point = None
+                    for oc in market.get("outcomes", []):
+                        if oc.get("price") is None or oc.get("point") is None:
+                            continue
+                        if oc.get("name") == home:
+                            home_price, point = float(oc["price"]), float(oc["point"])
+                        elif oc.get("name") == away:
+                            away_price = float(oc["price"])
+                    if home_price and away_price and point is not None:
+                        spreads.setdefault(point, []).append((home_price, away_price))
+                        if key in PREFERRED_BOOKMAKERS and key not in spread_preferred:
+                            spread_preferred[key] = (point, home_price, away_price)
+                    continue
+
                 if market.get("key") == "totals":
                     over = under = point = None
                     for oc in market.get("outcomes", []):
@@ -180,6 +201,26 @@ def _parse(payload: list, league: str) -> list[dict]:
                 "bookmaker_count": len(prices),
             }
 
+        # Kèo chấp: ưu tiên nhà cái sắc nhất vì mốc chấp giữa các nhà cái có
+        # thể lệch nhau nửa trái, gộp trung vị sẽ ra một mốc không ai treo.
+        handicap = None
+        for name in PREFERRED_BOOKMAKERS:
+            if name in spread_preferred:
+                point, hp, ap = spread_preferred[name]
+                handicap = {"line": point, "home": hp, "away": ap,
+                            "source": name, "bookmaker_count": 1}
+                break
+        if handicap is None and spreads:
+            point = max(spreads, key=lambda k: len(spreads[k]))
+            prices = spreads[point]
+            handicap = {
+                "line": point,
+                "home": _median([p[0] for p in prices]),
+                "away": _median([p[1] for p in prices]),
+                "source": f"median_of_{len(prices)}",
+                "bookmaker_count": len(prices),
+            }
+
         out.append({
             "league": league,
             "commence_time": event.get("commence_time"),
@@ -191,5 +232,6 @@ def _parse(payload: list, league: str) -> list[dict]:
             "odds_source": source,
             "bookmaker_count": len(collected["home"]),
             "total_line": total_line,
+            "handicap": handicap,
         })
     return out

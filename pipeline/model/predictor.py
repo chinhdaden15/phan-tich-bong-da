@@ -382,6 +382,154 @@ DEFAULT_BASE_RATES = {
 # Ngưỡng phân loại, tính trên phần vượt tần suất nền. Đặt thấp hơn ngưỡng
 # cũ vì thước đo giờ khắt khe hơn nhiều: vượt nền 15 điểm phần trăm đã là
 # một trận rất khác thường.
+# Tên gọi quen thuộc của từng mốc chấp, theo cách người Việt hay nói.
+HANDICAP_NAMES = {
+    0.0: "đồng banh",
+    0.25: "chấp 1/4 (0 - 1/2)",
+    0.5: "chấp nửa trái",
+    0.75: "chấp 1/2 - 1",
+    1.0: "chấp một trái",
+    1.25: "chấp 1 - 1/4",
+    1.5: "chấp một rưỡi",
+    1.75: "chấp 1 1/2 - 2",
+    2.0: "chấp hai trái",
+    2.25: "chấp 2 - 1/4",
+    2.5: "chấp hai rưỡi",
+}
+
+
+def describe_handicap(line: float, home: str, away: str) -> dict:
+    """
+    Diễn giải mốc chấp thành câu tiếng Việt và mức cách biệt cần thiết.
+
+    line theo góc nhìn ĐỘI NHÀ: âm là đội nhà chấp. Mốc phần tư là hai kèo gộp
+    nên có thể ăn/thua NỬA tiền — chỗ này nói rõ ra, vì đó đúng là điều người
+    đặt kèo cần biết trước trận.
+    """
+    size = abs(line)
+    # Kèo đồng banh không có bên nào chấp, nhưng vẫn cần một mốc quy chiếu cho
+    # nhãn ăn/thua. Lấy đội nhà, khớp với câu mô tả ngay bên dưới.
+    giver, taker = (away, home) if line > 0 else (home, away)
+    name = HANDICAP_NAMES.get(round(size, 2), f"chấp {size:g} trái")
+
+    if size == 0:
+        need = f"{home} thắng là ăn; hoà thì hoàn tiền."
+    else:
+        frac = round(size % 1, 2)
+        base = int(size // 1)
+        if frac == 0.0:
+            need = (f"{giver} phải thắng cách biệt từ {base + 1} bàn; "
+                    f"thắng đúng {base} bàn thì hoàn tiền.")
+        elif frac == 0.5:
+            need = f"{giver} phải thắng cách biệt từ {base + 1} bàn."
+        elif frac == 0.25:
+            need = (f"{giver} phải thắng cách biệt từ {base + 1} bàn; "
+                    f"thắng đúng {base} bàn thì thua nửa tiền."
+                    if base else f"{giver} phải thắng; hoà thì thua nửa tiền.")
+        else:   # 0.75
+            need = (f"{giver} phải thắng cách biệt từ {base + 2} bàn; "
+                    f"thắng đúng {base + 1} bàn thì ăn nửa tiền.")
+
+    return {
+        "line": round(line, 2),
+        "size": round(size, 2),
+        "name": name,
+        "giver": giver,
+        "taker": taker,
+        "requirement": need,
+    }
+
+
+def _handicap_outcome(margin: int, line: float) -> str:
+    """
+    Một tỷ số cụ thể thì ĐỘI CHẤP ăn hay thua kèo.
+
+    Mốc phần tư là hai kèo gộp, mỗi bên nửa tiền, nên có thêm hai kết cục
+    "ăn nửa" và "thua nửa" — bỏ qua chúng là nói sai với người đặt kèo.
+    """
+    # Quy về góc nhìn đội chấp: cách biệt dương nghĩa là đội chấp đang dẫn.
+    supremacy = margin if line < 0 else -margin
+    size = abs(line)
+
+    if abs(line) < 1e-9:
+        return "ăn" if margin > 0 else ("hoà" if margin == 0 else "thua")
+
+    frac = round(size % 1, 2)
+    parts = [size - 0.25, size + 0.25] if frac in (0.25, 0.75) else [size]
+
+    score = 0.0
+    for part in parts:
+        edge = supremacy - part
+        score += (1.0 if edge > 1e-9 else (0.0 if abs(edge) <= 1e-9 else -1.0)) / len(parts)
+
+    if score > 0.99:
+        return "ăn"
+    if score > 0.01:
+        return "ăn nửa"
+    if abs(score) <= 0.01:
+        return "hoà"
+    if score > -0.99:
+        return "thua nửa"
+    return "thua"
+
+
+def handicap_block(matrix, handicap: dict, home: str, away: str,
+                   scores: list[dict] | None = None) -> dict | None:
+    """
+    Khối kèo chấp cho một trận: mốc, diễn giải, và xác suất ăn cửa trên.
+
+    CỐ Ý KHÔNG đưa kèo chấp vào danh sách "cửa đáng tin nhất trận". Nhà cái đặt
+    mốc chấp đúng chỗ để hai cửa gần 50/50, nên nó gần như không bao giờ vượt
+    được sàn 55% — và khi vượt thì chỉ nghĩa là giá ngắn, chứ không phải có lợi
+    thế. Việc của phần này là GIẢI THÍCH, không phải gợi ý.
+
+    Đo trên 9.758 trận: dùng kèo chấp thay cho 1X2 khi dựng ma trận tỷ số KHÔNG
+    làm dự đoán chuẩn hơn (RPS 0,19394 so với 0,19386; log-loss tỷ số 2,88101 so
+    với 2,88089 — khoảng tin cậy đều chứa 0). Lý do: nhà cái ra giá cả hai thị
+    trường từ cùng một mô hình, nên sau khi khử biên chúng nói y hệt nhau.
+    """
+    if not handicap or handicap.get("line") is None:
+        return None
+
+    from .odds import devig_two_way, handicap_two_way
+
+    line = float(handicap["line"])
+    info = describe_handicap(line, home, away)
+
+    try:
+        market_cover = devig_two_way(float(handicap["home"]), float(handicap["away"]))
+    except (TypeError, ValueError, ZeroDivisionError):
+        market_cover = None
+
+    model_cover = handicap_two_way(matrix, line)
+
+    # Tỷ số nào ăn được kèo? Đây chính là mối nối giữa dự đoán tỷ số và kèo
+    # chấp: xem tỷ số khả dĩ nhất có vượt được mốc chấp hay không.
+    #
+    # Chấm theo góc nhìn ĐỘI CHẤP, đúng bên mà câu "cần thắng cách biệt mấy
+    # bàn" ở trên đang nói tới. Nếu chấm theo đội nhà thì khi đội khách là bên
+    # chấp, hai phần sẽ nói ngược nhau và người đọc chắc chắn hiểu nhầm.
+    covers = []
+    for sc in (scores or [])[:3]:
+        covers.append({
+            "home": sc["home"], "away": sc["away"],
+            "probability": round(float(sc["probability"]), 4),
+            "result": _handicap_outcome(
+                int(sc["home"]) - int(sc["away"]), line),
+        })
+
+    return {
+        **info,
+        "odds": {"home": handicap.get("home"), "away": handicap.get("away")},
+        "source": handicap.get("source"),
+        "market_cover": round(market_cover, 4) if market_cover is not None else None,
+        "model_cover": round(model_cover, 4),
+        # Ghi rõ nhãn ăn/thua đang nói về bên nào, để giao diện không đoán mò.
+        "outcome_for": info["giver"],
+        "top_scores": covers,
+    }
+
+
 CLARITY_STRONG = 0.18
 CLARITY_MODERATE = 0.10
 

@@ -11,6 +11,7 @@ Dữ liệu cho dùng cá nhân miễn phí; hãy tải có mức độ và luô
 from __future__ import annotations
 
 import io
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -28,6 +29,14 @@ DIVISIONS = {
     "ligue-1": "F1",
     "eredivisie": "N1",
     "primeira-liga": "P1",
+    # Bốn giải dưới đây thêm vào để dựng mô hình phạt góc cho Champions League:
+    # C1 không có dữ liệu góc riêng, nên sức mạnh góc của mỗi CLB phải lấy từ
+    # giải quốc nội của họ. Áo không có trong bộ này (nằm ở tệp "extra" định
+    # dạng khác) nên vài CLB Áo sẽ không có kèo góc — chấp nhận được.
+    "scottish-premiership": "SC0",
+    "turkish-super-lig": "T1",
+    "belgian-pro-league": "B1",
+    "greek-super-league": "G1",
 }
 
 # Cột kèo đóng cửa, xếp theo độ "sắc" giảm dần.
@@ -72,9 +81,21 @@ def download_season(
         raw = cache_file.read_bytes()
     else:
         url = f"{BASE_URL}/{code}/{div}.csv"
-        response = requests.get(url, timeout=timeout, headers=HEADERS)
+        # timeout của requests là thời gian CHỜ GIỮA HAI GÓI, không phải tổng
+        # thời gian. Máy chủ nhỏ giọt vài byte một sẽ liên tục làm mới bộ đếm
+        # và lời gọi treo vô hạn — đã gặp đúng chuyện này, tiến trình đứng im
+        # hàng chục phút ở 0% CPU. Đọc theo luồng rồi tự chặn tổng thời gian.
+        deadline = time.monotonic() + max(timeout, 1) * 2
+        response = requests.get(url, timeout=timeout, headers=HEADERS, stream=True)
         response.raise_for_status()
-        raw = response.content
+        chunks = []
+        for chunk in response.iter_content(chunk_size=65536):
+            chunks.append(chunk)
+            if time.monotonic() > deadline:
+                raise requests.exceptions.Timeout(
+                    f"quá {max(timeout, 1) * 2}s khi tải {div}_{code}"
+                )
+        raw = b"".join(chunks)
         cache_file.write_bytes(raw)
 
     # Nguồn dùng mã hoá không nhất quán giữa các mùa; latin-1 đọc được tất cả.
@@ -119,6 +140,36 @@ def _clean(df: pd.DataFrame, league: str, start_year: int) -> pd.DataFrame:
     else:
         out["home_corners"] = pd.NA
         out["away_corners"] = pd.NA
+
+    # Cược chấp châu Á: mốc chấp và giá hai cửa.
+    #
+    # Cột "C" là giá đóng cửa (sát giờ bóng lăn) nên sắc hơn giá mở, ưu tiên
+    # dùng trước. Mốc chấp ghi dưới góc nhìn ĐỘI NHÀ: -1.5 nghĩa là đội nhà
+    # chấp 1.5 trái, phải thắng cách biệt từ 2 bàn mới ăn.
+    for line_col, home_col, away_col in (("AHCh", "AvgCAHH", "AvgCAHA"),
+                                         ("AHh", "AvgAHH", "AvgAHA"),
+                                         ("AHh", "B365AHH", "B365AHA")):
+        if all(c in df.columns for c in (line_col, home_col, away_col)):
+            trio = df[[line_col, home_col, away_col]].apply(pd.to_numeric, errors="coerce")
+            if trio.notna().all(axis=1).mean() > 0.5:
+                out["ah_line"] = trio[line_col].values
+                out["ah_odds_home"] = trio[home_col].values
+                out["ah_odds_away"] = trio[away_col].values
+                break
+    else:
+        out["ah_line"] = out["ah_odds_home"] = out["ah_odds_away"] = pd.NA
+
+    # Kèo tài/xỉu 2.5, cần để ghim chiều tổng bàn.
+    for over_col, under_col in (("AvgC>2.5", "AvgC<2.5"), ("Avg>2.5", "Avg<2.5"),
+                                ("B365>2.5", "B365<2.5")):
+        if over_col in df.columns and under_col in df.columns:
+            pair = df[[over_col, under_col]].apply(pd.to_numeric, errors="coerce")
+            if pair.notna().all(axis=1).mean() > 0.5:
+                out["odds_over25"] = pair[over_col].values
+                out["odds_under25"] = pair[under_col].values
+                break
+    else:
+        out["odds_over25"] = out["odds_under25"] = pd.NA
 
     # Lấy bộ kèo đóng cửa sắc nhất mà mùa đó có
     for cols in CLOSING_ODDS_SETS:

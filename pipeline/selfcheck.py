@@ -32,7 +32,7 @@ REQUIRED_JS = [
     "scorersSection", "marketSection", "openSheet", "closeSheet", "enableSwipeToClose",
     "renderHistory", "zoneClass", "renderStandings", "renderStrength", "renderAbout",
     "render", "renderLeagueTabs", "init",
-    "crestKey", "crestMap", "crestImg", "cornersSection",
+    "crestKey", "crestMap", "crestImg", "cornersSection", "handicapSection", "shortenTeams",
 ]
 
 # Trường bắt buộc trong mỗi bản ghi dự đoán.

@@ -34,7 +34,8 @@ from model.dixon_coles import fit_dixon_coles
 from model.extra_markets import (first_half_markets, measure_h1_share,
                                  player_scoring_rates,
                                  squad_scorer_probabilities)
-from model.predictor import (compute_base_rates, european_strength_table,
+from model.predictor import (_matrix_with_rho, compute_base_rates,
+                            european_strength_table, handicap_block,
                             predict_european_match, predict_match,
                             predict_with_market, summarise_signal,
                             team_strength_table)
@@ -248,19 +249,34 @@ def build_league(league: str, no_remote: bool = False) -> dict:
     # So sánh theo mốc thời gian thật, không theo ngày. Trận thiếu giờ thi đấu
     # thì lùi về so sánh theo ngày với biên một ngày để không loại nhầm.
     now_utc = datetime.now(timezone.utc)
-    horizon = now_utc + timedelta(days=FIXTURE_WINDOW_DAYS)
 
-    def in_window(row) -> bool:
-        ko_raw = row["kickoff_utc"]
-        if ko_raw is not None and not pd.isna(ko_raw):
-            ko = datetime.fromisoformat(str(ko_raw).replace("Z", "+00:00"))
-            return now_utc <= ko <= horizon
-        day = row["date"].date()
-        return now_utc.date() <= day <= horizon.date()
+    def within(days: int):
+        horizon = now_utc + timedelta(days=days)
 
-    window = fixtures[fixtures.apply(in_window, axis=1)] if len(fixtures) else fixtures
+        def in_window(row) -> bool:
+            ko_raw = row["kickoff_utc"]
+            if ko_raw is not None and not pd.isna(ko_raw):
+                ko = datetime.fromisoformat(str(ko_raw).replace("Z", "+00:00"))
+                return now_utc <= ko <= horizon
+            day = row["date"].date()
+            return now_utc.date() <= day <= horizon.date()
+
+        return fixtures[fixtures.apply(in_window, axis=1)] if len(fixtures) else fixtures
+
+    # Nới cửa sổ khi giải đang nghỉ.
+    #
+    # Dịp nghỉ FIFA kéo dài khoảng hai tuần, đúng bằng cửa sổ thường, nên app
+    # từng trắng trơn cả hai giải quốc nội suốt thời gian đó — người dùng mở
+    # lên chỉ thấy "không có trận nào" và tưởng app hỏng. Nay nếu cửa sổ ngắn
+    # không ra trận nào thì nới tới lượt kế tiếp.
+    days = FIXTURE_WINDOW_DAYS
+    window = within(days)
+    if not len(window):
+        days = CUP_FIXTURE_WINDOW_DAYS
+        window = within(days)
+
     upcoming_kickoff = next_kickoff(fixtures["kickoff_utc"], now_utc) if len(fixtures) else None
-    print(f"  lịch: {len(window)} trận trong {FIXTURE_WINDOW_DAYS} ngày tới")
+    print(f"  lịch: {len(window)} trận trong {days} ngày tới")
 
     # Kèo góc. Nguồn và mô hình hoàn toàn tách khỏi bàn thắng, nên hỏng ở đây
     # cũng không ảnh hưởng phần còn lại.
@@ -362,6 +378,7 @@ def build_league(league: str, no_remote: bool = False) -> dict:
                 "basis": "squad",
             }
         pred["signal"] = summarise_signal(pred, base_rates)
+        pred["handicap"] = market_handicap(pred, event, f["home_team"], f["away_team"])
         predictions.append(pred)
 
     print(f"  đã sinh {len(predictions)} dự đoán")
@@ -499,6 +516,14 @@ def build_champions_league() -> dict:
     upcoming_kickoff = next_kickoff(fixtures["kickoff_utc"], now_utc) if len(fixtures) else None
     print(f"  lịch: {len(window)} trận trong {CUP_FIXTURE_WINDOW_DAYS} ngày tới")
 
+    # Kèo góc cho C1: gộp dữ liệu góc của mọi giải quốc nội mà nguồn có, rồi
+    # tra từng CLB theo tên. CLB nào không nằm trong các giải đó (chủ yếu là
+    # Áo, Azerbaijan, Na Uy) sẽ không có kèo góc — app bỏ qua phần đó thay vì
+    # bịa ra con số.
+    # Dùng đúng khoảng mùa mà mô hình xuyên giải đang dùng cho phần quốc nội.
+    corner_fit, corner_names = build_corner_model(
+        CORNER_LEAGUES, list(range(CURRENT_SEASON - 3, CURRENT_SEASON + 1)))
+
     # Quy đổi tên theo chính bảng dữ liệu đã huấn luyện, không dùng lại bảng
     # dựng từ các mùa C1 trước — mùa nào cũng có CLB lần đầu dự giải.
     fixture_names = sorted(set(window["home_team"]) | set(window["away_team"])) if len(window) else []
@@ -549,6 +574,8 @@ def build_champions_league() -> dict:
             pred["confidence"]["level"] = "thấp"
             pred["confidence"]["no_data_teams"] = missing
         pred["market"] = pred.get("market")
+        pred["corners"] = corner_block(
+            corner_fit, corner_names, f["home_team"], f["away_team"])
 
         event = odds_index.get((f["home_team"], f["away_team"]))
         pred["market"] = (
@@ -570,6 +597,7 @@ def build_champions_league() -> dict:
                 "basis": "squad",
             }
         pred["signal"] = summarise_signal(pred, base_rates)
+        pred["handicap"] = market_handicap(pred, event, f["home_team"], f["away_team"])
         predictions.append(pred)
 
     print(f"  đã sinh {len(predictions)} dự đoán")
@@ -804,11 +832,44 @@ def dump_json(path: Path, payload, indent: int | None = None) -> None:
     )
 
 
+def market_handicap(pred: dict, event: dict | None, home: str, away: str) -> dict | None:
+    """
+    Khối kèo chấp cho một trận, dựng từ ma trận tỷ số đã ép khớp thị trường.
+
+    Dùng ma trận đã hiệu chỉnh chứ không phải ma trận thuần mô hình, để xác
+    suất ăn kèo nói cùng một thứ tiếng với các con số khác trong app.
+    """
+    if not event or not (event.get("handicap")):
+        return None
+
+    market = pred.get("market") or {}
+    available = bool(market.get("available"))
+    source = market["prediction"] if available else pred["prediction"]
+
+    # Dựng lại ma trận từ tham số đã ép khớp thị trường khi có, để xác suất ăn
+    # kèo chấp nhất quán với mọi con số khác trong app.
+    try:
+        if available:
+            eg, rho = market["expected_goals"], float(market.get("rho") or 0.0)
+        else:
+            eg, rho = pred["expected_goals"], 0.0
+        matrix = _matrix_with_rho(float(eg["home"]), float(eg["away"]), rho)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+    return handicap_block(matrix, event["handicap"], home, away,
+                          scores=source.get("correct_score", []))
+
+
 # Các mốc kèo góc mà nhà cái hay treo.
 CORNER_LINES = (8.5, 9.5, 10.5, 11.5)
 
+# Các giải quốc nội có dữ liệu góc, dùng để dựng mô hình góc cho Champions
+# League. Bỏ hạng Nhất Anh vì không CLB nào ở đó dự cúp châu Âu.
+CORNER_LEAGUES = [l for l in historical.DIVISIONS if l != "championship"]
 
-def build_corner_model(league: str, seasons: list[int]):
+
+def build_corner_model(league: str | list[str], seasons: list[int]):
     """
     Khớp mô hình phạt góc, kèm bảng quy đổi tên đội sang tên mà app dùng.
 
@@ -816,9 +877,15 @@ def build_corner_model(league: str, seasons: list[int]):
     ("Man City" so với "Manchester City FC"), nên phải có bảng quy đổi mới tra
     được. Trả về (fit, mapping) hoặc (None, {}) khi không có dữ liệu — góc chỉ
     là phần thêm, thiếu nó không được làm hỏng cả lần build.
+
+    Nhận NHIỀU giải để dùng cho Champions League: C1 không có dữ liệu góc riêng,
+    nên sức mạnh góc của mỗi CLB phải lấy từ giải quốc nội của họ. Gộp chung
+    một lần khớp thay vì khớp từng giải rồi ghép, để mọi đội nằm chung một
+    thang đo — hệt cách mô hình bàn thắng xuyên giải đang làm.
     """
+    leagues = [league] if isinstance(league, str) else list(league)
     try:
-        df = historical.load_leagues([league], seasons)
+        df = historical.load_leagues(leagues, seasons)
     except Exception as exc:
         print(f"  góc: bỏ qua ({type(exc).__name__}: {exc})")
         return None, {}
@@ -828,6 +895,10 @@ def build_corner_model(league: str, seasons: list[int]):
         print(f"  góc: chỉ có {len(df)} trận, quá ít để khớp — bỏ qua")
         return None, {}
 
+    # Với bản gộp nhiều giải (hơn 500 tham số), L-BFGS-B báo converged=False.
+    # Đã kiểm: chạy 400, 4.000 và 20.000 vòng cho ra tham số GIỐNG HỆT nhau,
+    # chênh lệch đúng bằng 0 — nên đó là báo động giả của điều kiện dừng, lời
+    # giải đã tối ưu. Không nâng số vòng vì chẳng thay đổi gì.
     fit = fit_corners(
         df["home_team"], df["away_team"], df["home_corners"], df["away_corners"],
         match_dates=df["date"].values, xi=MODEL_XI, ridge=MODEL_RIDGE,

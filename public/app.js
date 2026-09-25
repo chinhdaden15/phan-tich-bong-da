@@ -321,6 +321,61 @@ function signalSection(p) {
 }
 
 /**
+ * Kèo chấp châu Á.
+ *
+ * Đây là kèo được đặt nhiều nhất, nhưng app CỐ TÌNH không đưa nó vào danh sách
+ * "cửa đáng tin nhất trận". Nhà cái đặt mốc chấp đúng chỗ để hai cửa gần 50/50
+ * — nhìn con số "thị trường" bên dưới sẽ thấy nó luôn quanh 50%. Nên ở đây
+ * không có cửa nào dễ ăn hơn cửa nào; việc của phần này là GIẢI THÍCH mốc chấp
+ * và nối nó với tỷ số dự đoán, chứ không phải gợi ý đặt cược.
+ *
+ * Đã thử dùng kèo chấp THAY cho 1X2 khi dựng ma trận tỷ số: đo trên 9.758 trận,
+ * kết quả ngang nhau (RPS 0,19394 so với 0,19386, khoảng tin cậy chứa 0). Nhà
+ * cái ra giá cả hai thị trường từ cùng một mô hình nên chúng nói y hệt nhau.
+ */
+/** Đổi tên đội đầy đủ trong một câu thành tên rút gọn, cho khớp phần còn lại. */
+function shortenTeams(text, names) {
+  let out = String(text || "");
+  (names || []).filter(Boolean).forEach((full) => {
+    out = out.split(full).join(shortName(full));
+  });
+  return out;
+}
+
+function handicapSection(p) {
+  const h = p.handicap;
+  if (!h) return "";
+
+  // Nhãn ăn/thua thuộc về ĐỘI CHẤP (outcome_for), cùng bên với câu yêu cầu
+  // phía trên. Không ghi rõ tên đội ở đây thì trận nào đội khách chấp sẽ bị
+  // đọc ngược hoàn toàn.
+  const LABEL = {
+    "ăn": ["ok", "ăn kèo"], "ăn nửa": ["ok", "ăn nửa tiền"],
+    "hoà": ["dim", "hoàn tiền"],
+    "thua nửa": ["bad", "thua nửa tiền"], "thua": ["bad", "thua kèo"],
+  };
+  const rows = (h.top_scores || []).map((s) => {
+    const [cls, text] = LABEL[s.result] || ["dim", s.result];
+    return `<div class="kv"><span>${s.home}–${s.away} <span class="dim">${pct1(s.probability)}</span></span>
+      <b class="${cls}">${text}</b></div>`;
+  }).join("");
+
+  return `
+    <div class="section-label">Kèo chấp</div>
+    <div class="kv"><span>Mốc chấp</span>
+      <b>${escapeHtml(shortName(h.giver))} ${escapeHtml(h.name)}</b></div>
+    <div class="verdict-note">${escapeHtml(shortenTeams(h.requirement, [h.giver, h.taker]))}</div>
+    ${h.market_cover != null ? `<div class="kv"><span>Cửa trên theo nhà cái</span>
+      <b>${pct1(h.market_cover)}</b></div>` : ""}
+    ${rows ? `<div class="section-label" style="margin-top:14px">Ba tỷ số khả dĩ nhất —
+      cửa ${escapeHtml(shortName(h.outcome_for || h.giver))} ăn hay thua</div>${rows}` : ""}
+    <div class="note">Nhà cái đặt mốc chấp sao cho hai cửa gần 50/50 — con số
+      trên luôn quanh mức đó, nên ở kèo này không có cửa nào dễ ăn hơn cửa nào.
+      Phần này để bạn biết <strong>cần tỷ số thế nào mới ăn</strong>, không phải
+      gợi ý đặt cược.</div>`;
+}
+
+/**
  * Kèo tài/xỉu phạt góc.
  *
  * Phần này CỐ TÌNH nói rõ mình yếu. Kiểm định cuốn chiếu trên 3.800 trận cho
@@ -630,6 +685,8 @@ function openSheet(p) {
     <div class="note">Kèo hiệp 1 do mô hình suy ra, không lấy từ nhà cái:
       ${pct(p.first_half.share_used)} số bàn của giải này được ghi trong hiệp 1.
       Đã đối chiếu với kèo thật ở một trận mẫu, lệch khoảng 1 điểm phần trăm.</div>` : ""}
+
+    ${handicapSection(p)}
 
     ${cornersSection(p)}
 
