@@ -212,6 +212,40 @@ def check_history(errors: list[str]) -> None:
                     )
 
 
+def check_index_matches_files(errors: list[str]) -> None:
+    """
+    Số liệu trong index.json phải khớp với tệp thật của từng giải.
+
+    VÌ SAO CẦN: index.json và các tệp dữ liệu là những tệp RIÊNG, nên một lần
+    hợp nhất git hỏng có thể lấy index của bên này và lịch thi đấu của bên kia.
+    Kết quả vẫn là JSON hợp lệ, mọi kiểm tra khác vẫn đạt, nhưng app hiện
+    "không có trận nào" trong khi index nói có 88 trận. Đã xảy ra hai lần.
+    """
+    index_file = PUBLIC / "data" / "index.json"
+    if not index_file.exists():
+        return
+
+    index = json.loads(index_file.read_text(encoding="utf-8"))
+    for entry in index.get("leagues", []):
+        league = entry["id"]
+        for field, name in (("fixtures", "predictions"), ("teams", "standings"),
+                            ("history", "history")):
+            path = PUBLIC / "data" / league / f"{name}.json"
+            if not path.exists():
+                errors.append(f"{league}: index nói có {name} nhưng thiếu tệp")
+                continue
+            try:
+                actual = len(json.loads(path.read_text(encoding="utf-8")))
+            except (json.JSONDecodeError, OSError):
+                continue          # check_json() đã lo phần tệp hỏng
+            claimed = entry.get(field)
+            if claimed is not None and claimed != actual:
+                errors.append(
+                    f"{league}: index ghi {field}={claimed} nhưng "
+                    f"{name}.json có {actual} mục"
+                )
+
+
 def run(verbose: bool = True) -> list[str]:
     """Chạy toàn bộ kiểm tra. Trả về danh sách lỗi, rỗng nghĩa là đạt."""
     errors: list[str] = []
@@ -220,6 +254,7 @@ def run(verbose: bool = True) -> list[str]:
     check_predictions(errors)
     check_standings(errors)
     check_history(errors)
+    check_index_matches_files(errors)
 
     if verbose:
         if errors:
@@ -231,7 +266,7 @@ def run(verbose: bool = True) -> list[str]:
         else:
             print("\nTự kiểm tra: đạt "
                   f"({len(REQUIRED_JS)} hàm, JSON hợp lệ, dự đoán/bảng xếp hạng đủ trường, "
-                  "lịch sử chấm điểm đúng)")
+                  "lịch sử chấm điểm đúng, index khớp tệp)")
     return errors
 
 
