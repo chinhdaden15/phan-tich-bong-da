@@ -29,10 +29,10 @@ REQUIRED_JS = [
     "localDate", "dayKey", "formatDay", "formatTime", "titleCase", "shortName",
     "loadJSON", "showFreshness", "nextRefreshAt", "confidenceClass", "signalClass", "signalSection",
     "bestSource", "matchCard", "renderFixtures",
-    "scorersSection", "marketSection", "openSheet", "closeSheet", "enableSwipeToClose",
+    "marketSection", "openSheet", "closeSheet", "enableSwipeToClose",
     "renderHistory", "zoneClass", "renderStandings", "renderStrength", "renderAbout",
     "render", "renderLeagueTabs", "init",
-    "crestKey", "crestMap", "crestImg", "cornersSection", "handicapSection", "shortenTeams",
+    "crestKey", "crestMap", "crestImg", "handicapSection", "shortenTeams",
 ]
 
 # Trường bắt buộc trong mỗi bản ghi dự đoán.

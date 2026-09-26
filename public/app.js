@@ -385,36 +385,6 @@ function handicapSection(p) {
       gợi ý đặt cược.</div>`;
 }
 
-/**
- * Kèo tài/xỉu phạt góc.
- *
- * Phần này CỐ TÌNH nói rõ mình yếu. Kiểm định cuốn chiếu trên 3.800 trận cho
- * thấy mô hình góc chỉ giảm được 1,3-1,9% Brier so với việc đọc thẳng tần suất
- * chung của giải, và tương quan giữa tổng góc dự đoán với tổng góc thật chỉ
- * 0,18. Nói cách khác: số góc phần lớn là ngẫu nhiên. Đặt nó cạnh các kèo bàn
- * thắng mà không ghi chú thì người đọc sẽ tưởng hai bên đáng tin như nhau.
- */
-function cornersSection(p) {
-  const c = p.corners;
-  if (!c) return "";
-
-  const lines = Object.keys(c.over_under).sort((a, b) => a - b);
-  const rows = lines.map((L) => `
-    <div class="kv"><span>Tài ${L} góc</span><b>${pct1(c.over_under[L].over)}</b></div>`).join("");
-
-  return `
-    <div class="section-label">Phạt góc</div>
-    <div class="kv"><span>${escapeHtml(shortName(p.home_team))}</span><b>${c.expected.home.toFixed(1)}</b></div>
-    <div class="kv"><span>${escapeHtml(shortName(p.away_team))}</span><b>${c.expected.away.toFixed(1)}</b></div>
-    <div class="kv"><span>Tổng góc kỳ vọng</span><b>${c.expected.total.toFixed(1)}</b></div>
-    ${rows}
-    <div class="note">⚠ Kèo góc <strong>yếu hơn hẳn</strong> kèo bàn thắng. Kiểm
-      định trên 3.800 trận: mô hình chỉ nhỉnh hơn mức trung bình của giải khoảng
-      <strong>1,5%</strong>, tương quan giữa dự đoán và thực tế chỉ 0,18. Số góc
-      phần lớn do ngẫu nhiên quyết định. Hãy đọc mấy con số này như tham khảo,
-      đừng đặt ngang hàng với các cửa phía trên.</div>`;
-}
-
 /** Nguồn dự đoán tốt nhất cho một trận: thị trường nếu có kèo, nếu không thì mô hình. */
 function bestSource(p) {
   if (p.market?.available) {
@@ -562,59 +532,6 @@ function marketSection(p) {
   `;
 }
 
-/**
- * Phần cầu thủ ghi bàn.
- *
- * Mặc định tính trên ĐỘI HÌNH ĐĂNG KÝ nên có ngay từ khi lịch xuất hiện. Đội
- * hình ra sân chỉ được công bố khoảng một tiếng trước giờ bóng lăn — nếu chờ
- * nó thì gần như lúc nào mở app cũng không có gì để xem. Khi đội hình ra sân
- * về, phần này tự chuyển sang bản chính xác hơn tính trên 11 người đá chính.
- */
-function scorersSection(p) {
-  const lu = p.lineup;
-  const fromLineup = !!lu?.available;
-
-  const block = (side, team) => {
-    const rows = fromLineup
-      ? (lu.sides[side]?.scorers || []).slice(0, 3)
-      : (p.scorers?.[side] || []);
-    if (!rows.length) return "";
-
-    const xi = fromLineup && lu.sides[side]?.starters
-      ? `<div class="lineup-xi">${lu.sides[side].starters.map((x) =>
-          escapeHtml(x.name.split(" ").slice(-1)[0])).join(" · ")}</div>`
-      : "";
-
-    return `
-    <div class="lineup">
-      <div class="lineup-head">${escapeHtml(shortName(team))}
-        ${fromLineup && lu.sides[side]?.formation
-          ? `<span>${escapeHtml(lu.sides[side].formation)}</span>` : ""}</div>
-      ${xi}
-      <div class="lineup-scorers">
-        ${rows.map((x) => `<div class="kv">
-          <span>${escapeHtml(x.player)}
-            ${x.goals_this_season ? `<span style="color:var(--text-faint);font-size:11.5px">${x.goals_this_season} bàn</span>` : ""}</span>
-          <b>${pct1(x.probability)}</b></div>`).join("")}
-      </div>
-    </div>`;
-  };
-
-  const home = block("home", p.home_team);
-  const away = block("away", p.away_team);
-  if (!home && !away) return "";
-
-  return `
-    <div class="section-label">Ba cầu thủ dễ ghi bàn nhất${fromLineup ? " · đội hình ra sân" : ""}</div>
-    ${home}${away}
-    <div class="note"><strong>Ước lượng thô.</strong>
-      ${fromLineup
-        ? "Tính trên 11 người đá chính. Cầu thủ vào sân từ ghế dự bị không có trong danh sách."
-        : "Tính trên đội hình đăng ký, chưa biết ai đá chính. Khoảng một tiếng trước giờ bóng lăn, khi đội hình ra sân được công bố, phần này tự cập nhật chính xác hơn."}
-      Xác suất dựa trên số bàn mùa này và mùa trước cộng mức nền theo vị trí,
-      chuẩn hoá theo bàn thắng kỳ vọng của đội.</div>`;
-}
-
 function openSheet(p) {
   const src = bestSource(p);
   const o = src.outcome;
@@ -680,27 +597,8 @@ function openSheet(p) {
     <div class="kv"><span>Xỉu 2.5</span><b>${pct1(ou.under)}</b></div>
     <div class="kv"><span>Cả hai đội ghi bàn</span><b>${pct1(pred.btts.yes)}</b></div>
 
-    ${scorersSection(p)}
-
-    ${p.first_half ? `
-    <div class="section-label">Hiệp 1</div>
-    <div class="kv"><span>Thắng nhà / Hoà / Thắng khách</span>
-      <b>${pct(p.first_half.outcome.home)} · ${pct(p.first_half.outcome.draw)} · ${pct(p.first_half.outcome.away)}</b></div>
-    <div class="kv"><span>Có bàn trong hiệp 1</span>
-      <b>${pct1(p.first_half.over_under["0.5"].over)}</b></div>
-    <div class="kv"><span>Tài 1.5 hiệp 1</span>
-      <b>${pct1(p.first_half.over_under["1.5"].over)}</b></div>
-    <div class="kv"><span>Bàn kỳ vọng hiệp 1</span>
-      <b>${p.first_half.expected_goals.home.toFixed(2)} – ${p.first_half.expected_goals.away.toFixed(2)}</b></div>
-    <div class="note">Kèo hiệp 1 do mô hình suy ra, không lấy từ nhà cái:
-      ${pct(p.first_half.share_used)} số bàn ${p.first_half.share_measured === false
-        ? "được ghi trong hiệp 1 — đây là mức chung đo trên các giải CLB, vì bóng đá đội tuyển không có đủ trận để đo riêng"
-        : "của giải này được ghi trong hiệp 1"}.
-      Đã đối chiếu với kèo thật ở một trận mẫu, lệch khoảng 1 điểm phần trăm.</div>` : ""}
 
     ${handicapSection(p)}
-
-    ${cornersSection(p)}
 
     <div class="section-label">Ba tỷ số khả dĩ nhất</div>
     <div class="scores scores-3">${scores}</div>
@@ -893,9 +791,7 @@ async function renderHistory() {
         <span>${escapeHtml(formatDay(dayKey(r.fixture)))} · ${escapeHtml(roundLabel(r.fixture.round))}</span>
         <span>${a.half_time ? `HT ${a.half_time.home}–${a.half_time.away}` : ""}${
           a.corners && a.corners.home != null
-            ? `${a.half_time ? " · " : ""}Góc ${a.corners.home}–${a.corners.away}${
-                r.prediction?.corners
-                  ? ` (đoán ${r.prediction.corners.total.toFixed(1)})` : ""}` : ""}</span>
+            ? `${a.half_time ? " · " : ""}Góc ${a.corners.home}–${a.corners.away}` : ""}</span>
       </div>
       <div class="hist-score">
         <div class="hist-row ${homeWon ? "won" : "lost"}">

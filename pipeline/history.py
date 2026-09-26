@@ -318,10 +318,6 @@ def archive_finished(
                     (pred.get("market") or {}).get("prediction", {}).get("outcome")
                 ),
                 "confidence": (pred.get("confidence") or {}).get("level"),
-                # Giữ lại dự đoán góc để đối chiếu với số góc thật. Cần thiết
-                # vì mô hình góc rất yếu (chỉ hơn tần suất chung ~1,5%), nên
-                # người dùng phải tự kiểm chứng được thay vì tin lời app.
-                "corners": (pred.get("corners") or {}).get("expected"),
             },
             "actual": {
                 **actual,

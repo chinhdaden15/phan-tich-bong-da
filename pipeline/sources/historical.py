@@ -29,14 +29,6 @@ DIVISIONS = {
     "ligue-1": "F1",
     "eredivisie": "N1",
     "primeira-liga": "P1",
-    # Bốn giải dưới đây thêm vào để dựng mô hình phạt góc cho Champions League:
-    # C1 không có dữ liệu góc riêng, nên sức mạnh góc của mỗi CLB phải lấy từ
-    # giải quốc nội của họ. Áo không có trong bộ này (nằm ở tệp "extra" định
-    # dạng khác) nên vài CLB Áo sẽ không có kèo góc — chấp nhận được.
-    "scottish-premiership": "SC0",
-    "turkish-super-lig": "T1",
-    "belgian-pro-league": "B1",
-    "greek-super-league": "G1",
 }
 
 # Cột kèo đóng cửa, xếp theo độ "sắc" giảm dần.
@@ -130,16 +122,6 @@ def _clean(df: pd.DataFrame, league: str, start_year: int) -> pd.DataFrame:
         else ("A" if r.home_goals < r.away_goals else "D"),
         axis=1,
     )
-
-    # Số quả phạt góc. Có từ khoảng mùa 2000-01 trở đi và gần như không thiếu,
-    # nhưng vẫn để NA khi vắng thay vì điền 0 — điền 0 sẽ kéo tụt trung bình
-    # của đội và làm hỏng mô hình góc.
-    if "HC" in df.columns and "AC" in df.columns:
-        out["home_corners"] = pd.to_numeric(df["HC"], errors="coerce").values
-        out["away_corners"] = pd.to_numeric(df["AC"], errors="coerce").values
-    else:
-        out["home_corners"] = pd.NA
-        out["away_corners"] = pd.NA
 
     # Cược chấp châu Á: mốc chấp và giá hai cửa.
     #

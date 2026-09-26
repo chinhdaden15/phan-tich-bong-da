@@ -31,16 +31,11 @@ from config import describe_keys, load_env
 from model.adjustments import MatchContext
 from model.cross_league import fit_cross_league
 from model.dixon_coles import fit_dixon_coles
-from model.extra_markets import (DEFAULT_H1_SHARE, first_half_markets,
-                                 measure_h1_share,
-                                 player_scoring_rates,
-                                 squad_scorer_probabilities)
 from model.predictor import (_matrix_with_rho, compute_base_rates,
                             european_strength_table, handicap_block,
                             predict_european_match, predict_match,
                             predict_with_market, summarise_signal,
                             team_strength_table)
-from model.corners import fit_corners
 from sources import (espn, european, football_data_org, historical,
                      international, odds_live, openfootball,
                      results as results_src)
@@ -288,27 +283,8 @@ def build_league(league: str, no_remote: bool = False) -> dict:
     upcoming_kickoff = next_kickoff(fixtures["kickoff_utc"], now_utc) if len(fixtures) else None
     print(f"  lịch: {len(window)} trận trong {days} ngày tới")
 
-    # Kèo góc. Nguồn và mô hình hoàn toàn tách khỏi bàn thắng, nên hỏng ở đây
-    # cũng không ảnh hưởng phần còn lại.
-    corner_fit, corner_names = build_corner_model(league, seasons)
-
     rests = rest_days_map(results, window)
     base_rates = compute_base_rates(results)
-
-    # Tỷ lệ bàn hiệp 1 đo từ chính giải này, dùng để suy kèo hiệp 1.
-    h1_payloads = []
-    for year in seasons:
-        try:
-            h1_payloads.append(openfootball._load_payload(league, year, True, 30))
-        except Exception:
-            continue
-    h1_share, h1_n = measure_h1_share(h1_payloads)
-    print(f"  hiệp 1: {h1_share:.1%} tổng bàn (đo trên {h1_n} trận)")
-
-    scorer_rates, _ = load_scorers(league)
-    squads = load_squads(league)
-    print(f"  cầu thủ: {len(scorer_rates)} có dữ liệu ghi bàn, "
-          f"{len(squads)} đội có đội hình đăng ký")
 
     # Tiến độ mùa giải, dùng cho hệ số động lực.
     played = len(results[results["season"] == CURRENT_SEASON])
@@ -353,19 +329,6 @@ def build_league(league: str, no_remote: bool = False) -> dict:
             "league": league,
         }
         pred["head_to_head"] = head_to_head(results, f["home_team"], f["away_team"])
-        pred["corners"] = corner_block(
-            corner_fit, corner_names, f["home_team"], f["away_team"])
-        # Kèo hiệp 1 suy từ bàn thắng kỳ vọng cả trận. Dùng số đã hiệu chỉnh
-        # theo kèo nếu có, vì nó chính xác hơn số thuần mô hình.
-        _eg = pred["expected_goals"]
-        pred["first_half"] = first_half_markets(_eg["home"], _eg["away"], h1_share)
-        pred["scorers"] = {
-            "home": squad_scorer_probabilities(
-                squads.get(f["home_team"], []), scorer_rates, _eg["home"]),
-            "away": squad_scorer_probabilities(
-                squads.get(f["away_team"], []), scorer_rates, _eg["away"]),
-            "basis": "squad",
-        }
 
         event = odds_index.get((f["home_team"], f["away_team"]))
         pred["market"] = (
@@ -378,16 +341,6 @@ def build_league(league: str, no_remote: bool = False) -> dict:
             )
             if event else {"available": False, "reason": "chưa có kèo"}
         )
-        if (pred.get("market") or {}).get("available"):
-            _mg = pred["market"]["expected_goals"]
-            pred["first_half"] = first_half_markets(_mg["home"], _mg["away"], h1_share)
-            pred["scorers"] = {
-                "home": squad_scorer_probabilities(
-                    squads.get(f["home_team"], []), scorer_rates, _mg["home"]),
-                "away": squad_scorer_probabilities(
-                    squads.get(f["away_team"], []), scorer_rates, _mg["away"]),
-                "basis": "squad",
-            }
         pred["signal"] = summarise_signal(pred, base_rates)
         pred["handicap"] = market_handicap(pred, event, f["home_team"], f["away_team"])
         predictions.append(pred)
@@ -553,10 +506,6 @@ def build_nations_league() -> dict:
     upcoming_kickoff = next_kickoff(fixtures["kickoff_utc"], now_utc) if len(fixtures) else None
     print(f"  lịch: {len(window)} trận trong {days} ngày tới")
 
-    # Không có nguồn nào cho tỷ lệ bàn hiệp 1 của bóng đá đội tuyển: ESPN chỉ
-    # có chi tiết vài chục trận gần nhất, dưới xa ngưỡng 300 trận cần thiết để
-    # con số có ý nghĩa. Dùng mức mặc định và nói rõ trong giao diện.
-    h1_share, h1_n = DEFAULT_H1_SHARE, 0
     base_rates = compute_base_rates(results)
 
     odds_index = {}
@@ -579,8 +528,6 @@ def build_nations_league() -> dict:
             "league": "nations-league",
         }
         pred["head_to_head"] = head_to_head(results, f["home_team"], f["away_team"])
-        # Không có nguồn dữ liệu phạt góc cho bóng đá đội tuyển.
-        pred["corners"] = None
 
         event = odds_index.get((f["home_team"], f["away_team"]))
         pred["market"] = (
@@ -593,12 +540,6 @@ def build_nations_league() -> dict:
             )
             if event else {"available": False, "reason": "chưa có kèo"}
         )
-        _eg = (pred["market"]["expected_goals"]
-               if (pred.get("market") or {}).get("available") else pred["expected_goals"])
-        pred["first_half"] = first_half_markets(_eg["home"], _eg["away"], h1_share)
-        # Đánh dấu là mức mặc định để giao diện không nói dối rằng con số này
-        # được đo trên chính giải này.
-        pred["first_half"]["share_measured"] = False
         pred["signal"] = summarise_signal(pred, base_rates)
         pred["handicap"] = market_handicap(pred, event, f["home_team"], f["away_team"])
         predictions.append(pred)
@@ -705,22 +646,6 @@ def build_champions_league() -> dict:
     )
     print(f"  mặt bằng giải: {levels[0]} mạnh nhất, {levels[-1]} yếu nhất")
 
-    # Tỷ lệ bàn hiệp 1 cho C1: đo trên các giải quốc nội lớn, vì chính các CLB
-    # đó đá Champions League. Bản thân C1 chưa đủ trận trong mùa để tự đo.
-    h1_payloads = []
-    for lg in ("premier-league", "la-liga", "serie-a", "bundesliga", "ligue-1"):
-        for year in range(CURRENT_SEASON - 3, CURRENT_SEASON + 1):
-            try:
-                h1_payloads.append(openfootball._load_payload(lg, year, True, 30))
-            except Exception:
-                continue
-    h1_share, h1_n = measure_h1_share(h1_payloads)
-    print(f"  hiệp 1: {h1_share:.1%} tổng bàn (đo trên {h1_n} trận 5 giải lớn)")
-    scorer_rates, _ = load_scorers("champions-league")
-    squads = load_squads("champions-league")
-    print(f"  cầu thủ: {len(scorer_rates)} có dữ liệu ghi bàn, "
-          f"{len(squads)} đội có đội hình đăng ký")
-
     fixtures = european.upcoming_champions_league(CURRENT_SEASON)
     now_utc = datetime.now(timezone.utc)
     horizon = now_utc + timedelta(days=CUP_FIXTURE_WINDOW_DAYS)
@@ -735,14 +660,6 @@ def build_champions_league() -> dict:
     window = fixtures[fixtures["kickoff_utc"].map(in_window)] if len(fixtures) else fixtures
     upcoming_kickoff = next_kickoff(fixtures["kickoff_utc"], now_utc) if len(fixtures) else None
     print(f"  lịch: {len(window)} trận trong {CUP_FIXTURE_WINDOW_DAYS} ngày tới")
-
-    # Kèo góc cho C1: gộp dữ liệu góc của mọi giải quốc nội mà nguồn có, rồi
-    # tra từng CLB theo tên. CLB nào không nằm trong các giải đó (chủ yếu là
-    # Áo, Azerbaijan, Na Uy) sẽ không có kèo góc — app bỏ qua phần đó thay vì
-    # bịa ra con số.
-    # Dùng đúng khoảng mùa mà mô hình xuyên giải đang dùng cho phần quốc nội.
-    corner_fit, corner_names = build_corner_model(
-        CORNER_LEAGUES, list(range(CURRENT_SEASON - 3, CURRENT_SEASON + 1)))
 
     # Quy đổi tên theo chính bảng dữ liệu đã huấn luyện, không dùng lại bảng
     # dựng từ các mùa C1 trước — mùa nào cũng có CLB lần đầu dự giải.
@@ -785,8 +702,6 @@ def build_champions_league() -> dict:
             "league": "champions-league",
         }
         pred["head_to_head"] = head_to_head(pool, home_key, away_key)
-        _eg = pred["expected_goals"]
-        pred["first_half"] = first_half_markets(_eg["home"], _eg["away"], h1_share)
         if missing:
             # Đội không có dữ liệu nào: mô hình mặc định coi họ là trung bình
             # châu Âu, gần như chắc chắn là đánh giá quá cao. Nói thẳng ra
@@ -794,8 +709,6 @@ def build_champions_league() -> dict:
             pred["confidence"]["level"] = "thấp"
             pred["confidence"]["no_data_teams"] = missing
         pred["market"] = pred.get("market")
-        pred["corners"] = corner_block(
-            corner_fit, corner_names, f["home_team"], f["away_team"])
 
         event = odds_index.get((f["home_team"], f["away_team"]))
         pred["market"] = (
@@ -810,16 +723,6 @@ def build_champions_league() -> dict:
             )
             if event else {"available": False, "reason": "chưa có kèo"}
         )
-        if (pred.get("market") or {}).get("available"):
-            _mg = pred["market"]["expected_goals"]
-            pred["first_half"] = first_half_markets(_mg["home"], _mg["away"], h1_share)
-            pred["scorers"] = {
-                "home": squad_scorer_probabilities(
-                    squads.get(f["home_team"], []), scorer_rates, _mg["home"]),
-                "away": squad_scorer_probabilities(
-                    squads.get(f["away_team"], []), scorer_rates, _mg["away"]),
-                "basis": "squad",
-            }
         pred["signal"] = summarise_signal(pred, base_rates)
         pred["handicap"] = market_handicap(pred, event, f["home_team"], f["away_team"])
         predictions.append(pred)
@@ -891,59 +794,6 @@ SCORER_COMPETITIONS = {
     # Cầu thủ dự C1 đến từ khắp châu Âu nên phải gộp nhiều giải quốc nội.
     "champions-league": ["PL", "PD", "SA", "BL1", "FL1", "DED", "PPL"],
 }
-
-
-def load_squads(league: str) -> dict[str, list[dict]]:
-    """
-    Đội hình đăng ký của mọi CLB trong giải, khoá theo tên đội.
-
-    Cache một tuần vì danh sách chỉ đổi khi có chuyển nhượng. Lần chạy đầu tốn
-    một request mỗi CLB nên hơi lâu, các lần sau đọc thẳng từ cache.
-    """
-    try:
-        teams = football_data_org.competition_teams(league)
-    except Exception as exc:
-        print(f"  đội hình đăng ký: bỏ qua ({type(exc).__name__})")
-        return {}
-
-    squads = {}
-    for team in teams:
-        try:
-            players = football_data_org.squad(team["id"])
-        except Exception:
-            continue
-        if players:
-            squads[team["name"]] = players
-    return squads
-
-
-def load_scorers(league: str) -> tuple[dict, dict]:
-    """Tỷ lệ ghi bàn của cầu thủ và danh sách cầu thủ theo đội."""
-    codes = SCORER_COMPETITIONS.get(league, [])
-    current, previous = [], []
-    for code in codes:
-        for season, bucket in ((None, current), (CURRENT_SEASON - 1, previous)):
-            params = {"limit": 100}
-            if season is not None:
-                params["season"] = season
-            try:
-                bucket.extend(football_data_org._get(
-                    f"competitions/{code}/scorers", params,
-                    cache_hours=12.0 if season is None else 24 * 7,
-                ).get("scorers", []))
-            except Exception:
-                continue
-
-    rates = player_scoring_rates(current, previous)
-
-    # Đội hiện tại của cầu thủ lấy theo mùa NÀY, vì cầu thủ đổi CLB giữa các mùa.
-    team_players: dict[str, list[str]] = {}
-    for entry in current:
-        player = (entry.get("player") or {}).get("name")
-        team = (entry.get("team") or {}).get("name")
-        if player and team:
-            team_players.setdefault(team, []).append(player)
-    return rates, team_players
 
 
 def _index_odds(events: list[dict], fixtures: pd.DataFrame) -> dict:
@@ -1083,83 +933,6 @@ def market_handicap(pred: dict, event: dict | None, home: str, away: str) -> dic
 
     return handicap_block(matrix, event["handicap"], home, away,
                           scores=source.get("correct_score", []))
-
-
-# Các mốc kèo góc mà nhà cái hay treo.
-CORNER_LINES = (8.5, 9.5, 10.5, 11.5)
-
-# Các giải quốc nội có dữ liệu góc, dùng để dựng mô hình góc cho Champions
-# League. Bỏ hạng Nhất Anh vì không CLB nào ở đó dự cúp châu Âu.
-CORNER_LEAGUES = [l for l in historical.DIVISIONS if l != "championship"]
-
-
-def build_corner_model(league: str | list[str], seasons: list[int]):
-    """
-    Khớp mô hình phạt góc, kèm bảng quy đổi tên đội sang tên mà app dùng.
-
-    Nguồn góc là football-data.co.uk, viết tên đội khác hẳn nguồn lịch thi đấu
-    ("Man City" so với "Manchester City FC"), nên phải có bảng quy đổi mới tra
-    được. Trả về (fit, mapping) hoặc (None, {}) khi không có dữ liệu — góc chỉ
-    là phần thêm, thiếu nó không được làm hỏng cả lần build.
-
-    Nhận NHIỀU giải để dùng cho Champions League: C1 không có dữ liệu góc riêng,
-    nên sức mạnh góc của mỗi CLB phải lấy từ giải quốc nội của họ. Gộp chung
-    một lần khớp thay vì khớp từng giải rồi ghép, để mọi đội nằm chung một
-    thang đo — hệt cách mô hình bàn thắng xuyên giải đang làm.
-    """
-    leagues = [league] if isinstance(league, str) else list(league)
-    try:
-        df = historical.load_leagues(leagues, seasons)
-    except Exception as exc:
-        print(f"  góc: bỏ qua ({type(exc).__name__}: {exc})")
-        return None, {}
-
-    df = df.dropna(subset=["home_corners", "away_corners"])
-    if len(df) < 500:
-        print(f"  góc: chỉ có {len(df)} trận, quá ít để khớp — bỏ qua")
-        return None, {}
-
-    # Với bản gộp nhiều giải (hơn 500 tham số), L-BFGS-B báo converged=False.
-    # Đã kiểm: chạy 400, 4.000 và 20.000 vòng cho ra tham số GIỐNG HỆT nhau,
-    # chênh lệch đúng bằng 0 — nên đó là báo động giả của điều kiện dừng, lời
-    # giải đã tối ưu. Không nâng số vòng vì chẳng thay đổi gì.
-    fit = fit_corners(
-        df["home_team"], df["away_team"], df["home_corners"], df["away_corners"],
-        match_dates=df["date"].values, xi=MODEL_XI, ridge=MODEL_RIDGE,
-    )
-    print(f"  góc: {len(df)} trận, hội tụ={fit.converged}, "
-          f"sân nhà={fit.home_advantage:+.3f}")
-    return fit, {normalise(t): t for t in fit.teams}
-
-
-def corner_block(fit, source_names: dict, home: str, away: str) -> dict | None:
-    """Khối dự đoán góc cho một trận, hoặc None nếu thiếu dữ liệu một trong hai đội."""
-    if fit is None:
-        return None
-
-    mapping = build_name_map(set(source_names), {normalise(home), normalise(away)})
-
-    def resolve(name: str) -> str | None:
-        key = normalise(name)
-        for src_key, original in source_names.items():
-            if src_key == key or mapping.get(src_key) == key:
-                return original
-        return None
-
-    h, a = resolve(home), resolve(away)
-    if h is None or a is None:
-        return None
-
-    lam_h, lam_a = fit.expected_corners(h, a)
-    return {
-        "expected": {"home": round(lam_h, 2), "away": round(lam_a, 2),
-                     "total": round(lam_h + lam_a, 2)},
-        "over_under": {
-            str(line): {k: round(v, 4) for k, v in fit.over_under(h, a, line).items()}
-            for line in CORNER_LINES
-        },
-        "confidence": fit.confidence(h, a),
-    }
 
 
 def next_kickoff(kickoffs, now_utc: datetime) -> str | None:
