@@ -1,0 +1,10 @@
+# Dữ liệu do pipeline sinh ra: KHÔNG được trộn theo dòng.
+#
+# Các tệp này là JSON một dòng hoặc gần như vậy, và mỗi bản là một ảnh chụp
+# nhất quán của cùng một lần build. Để git tự trộn sẽ tạo ra tệp lai: index.json
+# lấy của bên này còn predictions.json lấy của bên kia, các con số không còn
+# khớp nhau mà vẫn là JSON hợp lệ nên không công cụ nào báo lỗi. Đã xảy ra thật.
+#
+# merge=binary buộc mọi khác biệt phải được giải quyết bằng cách chọn NGUYÊN
+# một bên, đúng bản chất của dữ liệu này.
+public/data/**/*.json merge=binary
