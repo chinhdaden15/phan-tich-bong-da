@@ -482,7 +482,31 @@ def build_nations_league() -> dict:
     print(f"  bảng xếp hạng: {len(standings)} đội trong "
           f"{len({r['group'] for r in standings})} bảng")
 
+    # Lấy kèo TRƯỚC lịch, vì danh sách trận của nhà cái là nguồn dự phòng khi
+    # ESPN không dùng được (nó chặn dải IP của GitHub Actions).
+    odds_events = []
+    if odds_live.has_key():
+        try:
+            odds_events = odds_live.fetch_odds("nations-league")
+        except Exception as exc:
+            print(f"  kèo: bỏ qua ({type(exc).__name__}: {exc})")
+
     fixtures = international.upcoming()
+    if not len(fixtures):
+        fixtures = international.upcoming_from_odds(odds_events)
+        if len(fixtures):
+            print(f"  lịch: ESPN không trả về gì, dùng {len(fixtures)} trận "
+                  f"từ danh sách của nhà cái")
+
+    # Cả hai nguồn cùng rỗng nghĩa là mạng hoặc nguồn đang hỏng, KHÔNG phải
+    # giải hết trận. Ném lỗi để vòng dựng bỏ qua giải này và giữ nguyên dữ liệu
+    # cũ, thay vì ghi đè lịch thật bằng một tệp rỗng — đúng lỗi đã xảy ra khi
+    # bot chạy lần đầu sau khi thêm giải.
+    if not len(fixtures) and not len(fresh):
+        raise RuntimeError(
+            "không lấy được lịch lẫn kết quả mới (ESPN và nhà cái đều im lặng)"
+        )
+
     now_utc = datetime.now(timezone.utc)
 
     def within(days: int):
@@ -508,14 +532,9 @@ def build_nations_league() -> dict:
 
     base_rates = compute_base_rates(results)
 
-    odds_index = {}
-    if odds_live.has_key():
-        try:
-            events = odds_live.fetch_odds("nations-league")
-            odds_index = _index_odds(events, window)
-            print(f"  kèo: khớp {len(odds_index)}/{len(window)} trận")
-        except Exception as exc:
-            print(f"  kèo: bỏ qua ({type(exc).__name__}: {exc})")
+    odds_index = _index_odds(odds_events, window) if odds_events else {}
+    if odds_events:
+        print(f"  kèo: khớp {len(odds_index)}/{len(window)} trận")
 
     predictions = []
     for _, f in window.iterrows():
@@ -960,6 +979,34 @@ def next_kickoff(kickoffs, now_utc: datetime) -> str | None:
     return best.isoformat().replace("+00:00", "Z") if best else None
 
 
+def write_list(path: Path, rows: list, label: str) -> list:
+    """
+    Ghi một danh sách ra JSON, nhưng KHÔNG cho tệp rỗng đè lên tệp đang có dữ liệu.
+
+    VÌ SAO: một nguồn hỏng trông y hệt "giải hết trận" — cả hai đều cho ra danh
+    sách rỗng. Đã xảy ra thật: ESPN chặn dải IP của GitHub Actions, nên lần bot
+    tự chạy đầu tiên sau khi thêm Nations League đã ghi đè lịch 88 trận và bảng
+    xếp hạng 32 đội thành hai tệp rỗng, và app hiện "Mùa giải chưa bắt đầu".
+
+    Dữ liệu cũ hơi lỗi thời vẫn hơn màn hình trắng, nên khi lần dựng ra rỗng mà
+    tệp cũ có nội dung thì giữ nguyên tệp cũ và báo to ra log.
+
+    Trả về nội dung THỰC SỰ nằm trên đĩa sau lời gọi này.
+    """
+    if not rows and path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            existing = []
+        if existing:
+            print(f"  GIỮ NGUYÊN {label}: lần dựng ra rỗng nhưng tệp cũ có "
+                  f"{len(existing)} mục — coi như nguồn hỏng, không ghi đè")
+            return existing
+
+    dump_json(path, rows)
+    return rows
+
+
 def write_index(out_dir: Path, built: list[dict]) -> None:
     """
     Ghi index.json, GIỮ LẠI các giải đã dựng từ lần chạy trước.
@@ -1058,24 +1105,35 @@ def main() -> None:
 
         league_dir = out_dir / league
         league_dir.mkdir(parents=True, exist_ok=True)
+        written = {}
         for key in ("standings", "strength", "predictions", "history"):
-            dump_json(league_dir / f"{key}.json", payload.get(key, []))
+            written[key] = write_list(
+                league_dir / f"{key}.json", payload.get(key, []), f"{league}/{key}")
         dump_json(league_dir / "model.json", payload["model"], indent=2)
         if payload.get("crests"):
             dump_json(league_dir / "crests.json", payload["crests"])
+
+        # Nếu lịch cũ được giữ lại thì mốc "lượt kế tiếp" phải tính theo chính
+        # nó, không thì app báo trống trong khi tệp vẫn có trận.
+        next_ko = payload.get("next_fixture_utc")
+        if next_ko is None and written["predictions"]:
+            next_ko = next_kickoff(
+                [(x.get("fixture") or {}).get("kickoff_utc") for x in written["predictions"]],
+                datetime.now(timezone.utc))
+
         built.append({
             "id": league,
             "name": payload["name"],
             "season": payload["season"],
-            "fixtures": len(payload["predictions"]),
-            "teams": len(payload["standings"]),
-            "history": len(payload.get("history", [])),
+            "fixtures": len(written["predictions"]),
+            "teams": len(written["standings"]),
+            "history": len(written["history"]),
             "accuracy": payload.get("accuracy", {}),
             # Trận gần nhất trong tương lai, kể cả khi nằm NGOÀI cửa sổ dự
             # đoán. Cúp châu Âu nghỉ 2-3 tuần giữa hai lượt, không có trường
             # này thì app chỉ biết nói "không có trận nào" mà không nói được
             # bao giờ mới có lại.
-            "next_fixture_utc": payload.get("next_fixture_utc"),
+            "next_fixture_utc": next_ko,
         })
 
     if not built:

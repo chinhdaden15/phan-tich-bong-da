@@ -154,6 +154,45 @@ def upcoming(days_ahead: int = 60) -> pd.DataFrame:
     return df.sort_values("kickoff_utc").reset_index(drop=True)
 
 
+def upcoming_from_odds(events: list[dict]) -> pd.DataFrame:
+    """
+    Dựng lịch thi đấu từ danh sách trận của nhà cái, khi ESPN không dùng được.
+
+    VÌ SAO CẦN: ESPN chặn dải IP của máy chủ GitHub Actions. Chạy trên máy cá
+    nhân thì mọi thứ bình thường, nhưng đúng lúc bot tự chạy thì mọi lời gọi
+    ESPN trả rỗng — và bản build đó đã ghi đè lịch Nations League thành trống
+    trơn. The Odds API dùng API key nên không dính kiểu chặn đó.
+
+    Thiếu so với ESPN: tên bảng đấu và cờ. Cả hai chỉ để hiển thị, không ảnh
+    hưởng dự đoán, và cờ vẫn còn trong crests.json của lần chạy trước.
+    """
+    rows = []
+    for e in events or []:
+        ko = e.get("commence_time")
+        home, away = e.get("home_team"), e.get("away_team")
+        if not (ko and home and away):
+            continue
+        rows.append({
+            "event_id": None,
+            "date": str(ko)[:10],
+            "kickoff_utc": ko,
+            "group": None,
+            "home_team": home,
+            "away_team": away,
+            "home_crest": None,
+            "away_crest": None,
+            "home_goals": None,
+            "away_goals": None,
+            "completed": False,
+        })
+    if not rows:
+        return pd.DataFrame(columns=["kickoff_utc", "home_team", "away_team",
+                                     "group", "date", "home_crest", "away_crest"])
+    df = pd.DataFrame(rows)
+    df["date"] = pd.to_datetime(df["date"])
+    return df.sort_values("kickoff_utc").reset_index(drop=True)
+
+
 def recent(days_back: int = 120) -> pd.DataFrame:
     """
     Kết quả Nations League vừa đá, dùng để vá phần bộ dữ liệu cộng đồng còn thiếu.
