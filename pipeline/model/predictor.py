@@ -118,6 +118,7 @@ def predict_with_market(
     odds_source: str = "unknown",
     devig: str = "multiplicative",
     total_line: dict | None = None,
+    handicap: dict | None = None,
 ) -> dict:
     """
     Bổ sung góc nhìn thị trường vào một dự đoán đã có từ predict_match().
@@ -153,8 +154,56 @@ def predict_with_market(
     if total_line and total_line.get("over") and total_line.get("under"):
         market_over = odds_mod.devig_two_way(total_line["over"], total_line["under"])
 
+    # Có kèo chấp thì dùng CẶP chấp + tài/xỉu thay cho 1X2 + tài/xỉu.
+    #
+    # VÌ SAO: hai thị trường này ràng buộc trực tiếp đúng hai đại lượng cần
+    # biết — mốc chấp ghim HIỆU (λ - μ), tài/xỉu ghim TỔNG (λ + μ). Kèo chấp
+    # cũng có biên lợi nhuận thấp nhất trong các thị trường bóng đá (2-3% so
+    # với 5-8% của 1X2), nên khử biên ít làm méo con số hơn.
+    #
+    # ĐO TRÊN 9.758 TRẬN (Ngoại hạng Anh, La Liga, Serie A, Bundesliga, mùa
+    # 2019-20 đến 2025-26, giá đóng cửa):
+    #
+    #   trúng tỷ số   1X2+tài/xỉu 13,36%  |  chấp+tài/xỉu 13,72%
+    #                 chênh +0,36 điểm, khoảng tin cậy 95% [+0,09; +0,63]
+    #
+    # Con số tổng trông nhỏ vì hai cách chọn CÙNG một tỷ số ở 93% số trận.
+    # Xét riêng 7% số trận chúng bất đồng: kèo chấp đúng 16,0% còn 1X2 chỉ
+    # 10,9% — chênh +5,1 điểm, KTC [+1,5; +8,9]. Đó mới là chỗ nó tạo khác biệt.
+    #
+    # Gộp cả ba thị trường thì KÉM HƠN dùng riêng kèo chấp (13,40% so với
+    # 13,72%, KTC [+0,04; +0,58]): ràng buộc 1X2 kéo lời giải về lại gần bản
+    # cũ. RPS của cửa 1X2 không đổi (0,1939 cả hai), nên đổi sang đây không
+    # đánh mất gì.
     calibration_error = None
-    if market_over is not None:
+    handicap_line = None
+    if handicap and handicap.get("line") is not None:
+        try:
+            handicap_line = float(handicap["line"])
+            cover = odds_mod.devig_two_way(
+                float(handicap["home"]), float(handicap["away"]))
+        except (TypeError, ValueError, ZeroDivisionError):
+            handicap_line = None
+
+    if handicap_line is not None and market_over is not None:
+        lam, mu, rho, converged, calibration_error = odds_mod.calibrate_to_handicap(
+            handicap_line, cover, market_over,
+            line=float(total_line.get("point", 2.5)),
+            rho=fit.rho,
+        )
+        calibrated_on = [f"chấp {handicap_line:+g}",
+                         f"tài/xỉu {total_line.get('point', 2.5)}"]
+        # Lời giải hỏng thì lùi về đường cũ thay vì đưa ra số bậy.
+        if not converged or (calibration_error or 0) > 1e-3:
+            lam, mu, rho, converged, calibration_error = odds_mod.calibrate_to_market_full(
+                market_probs, market_over,
+                line=float(total_line.get("point", 2.5)),
+                rho_start=fit.rho,
+                lam_start=base["expected_goals"]["home"],
+                mu_start=base["expected_goals"]["away"],
+            )
+            calibrated_on = ["1x2", f"tài/xỉu {total_line.get('point', 2.5)}"]
+    elif market_over is not None:
         lam, mu, rho, converged, calibration_error = odds_mod.calibrate_to_market_full(
             market_probs, market_over,
             line=float(total_line.get("point", 2.5)),

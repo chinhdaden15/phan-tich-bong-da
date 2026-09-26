@@ -57,6 +57,9 @@ FIXTURE_WINDOW_DAYS = 14     # dự đoán các trận trong ngần này ngày t
 # không cần, và giữ 14 ngày ở đó cũng giúp file dự đoán nhẹ.
 CUP_FIXTURE_WINDOW_DAYS = 35
 
+# Dưới ngần này trận trong cửa sổ thường thì coi như giải đang nghỉ và nới rộng.
+MIN_FIXTURES_BEFORE_WIDENING = 6
+
 # Tham số mô hình — chọn bằng dò lưới rồi KIỂM CHỨNG trên giai đoạn tách biệt.
 #
 # ridge=2.0: tốt nhất ở cả 5 mức xi trong dò lưới, và cũng tốt nhất trên giai
@@ -267,11 +270,15 @@ def build_league(league: str, no_remote: bool = False) -> dict:
     #
     # Dịp nghỉ FIFA kéo dài khoảng hai tuần, đúng bằng cửa sổ thường, nên app
     # từng trắng trơn cả hai giải quốc nội suốt thời gian đó — người dùng mở
-    # lên chỉ thấy "không có trận nào" và tưởng app hỏng. Nay nếu cửa sổ ngắn
-    # không ra trận nào thì nới tới lượt kế tiếp.
+    # lên chỉ thấy "không có trận nào" và tưởng app hỏng.
+    #
+    # Ngưỡng là SỐ TRẬN chứ không phải "rỗng hay không": bản đầu chỉ nới khi
+    # không có trận nào, nên hôm La Liga vừa trở lại đúng một trận trong 14
+    # ngày thì app hiện mỗi trận đó, trong khi Ngoại hạng Anh có 30. Một vòng
+    # đấu bình thường có khoảng 10 trận, nên dưới 6 nghĩa là giải vẫn đang nghỉ.
     days = FIXTURE_WINDOW_DAYS
     window = within(days)
-    if not len(window):
+    if len(window) < MIN_FIXTURES_BEFORE_WIDENING:
         days = CUP_FIXTURE_WINDOW_DAYS
         window = within(days)
 
@@ -364,6 +371,7 @@ def build_league(league: str, no_remote: bool = False) -> dict:
                 event["odds_home"], event["odds_draw"], event["odds_away"],
                 odds_source=event.get("odds_source", "unknown"),
                 total_line=event.get("total_line"),
+                handicap=event.get("handicap"),
             )
             if event else {"available": False, "reason": "chưa có kèo"}
         )
@@ -583,6 +591,10 @@ def build_champions_league() -> dict:
                 fit, pred,
                 event["odds_home"], event["odds_draw"], event["odds_away"],
                 odds_source=event.get("odds_source", "unknown"),
+                # Nhánh này trước đây bỏ quên hai tham số dưới, nên ma trận tỷ
+                # số của C1 chỉ khớp 1X2 và tổng bàn hoàn toàn do mô hình đoán.
+                total_line=event.get("total_line"),
+                handicap=event.get("handicap"),
             )
             if event else {"available": False, "reason": "chưa có kèo"}
         )
