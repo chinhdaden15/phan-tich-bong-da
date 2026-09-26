@@ -30,6 +30,7 @@ LEAGUE_CODES = {
     "serie-a": "ita.1",
     "bundesliga": "ger.1",
     "ligue-1": "fra.1",
+    "nations-league": "uefa.nations",
 }
 
 CACHE_DIR = Path(__file__).resolve().parents[2] / "data" / "cache" / "espn"

@@ -28,6 +28,7 @@ SPORT_KEYS = {
     "serie-a": "soccer_italy_serie_a",
     "bundesliga": "soccer_germany_bundesliga",
     "ligue-1": "soccer_france_ligue_one",
+    "nations-league": "soccer_uefa_nations_league",
 }
 
 # Nhà cái sắc nhất, dùng làm ưu tiên khi có mặt. Pinnacle nổi tiếng vì biên

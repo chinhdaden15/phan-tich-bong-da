@@ -31,7 +31,8 @@ from config import describe_keys, load_env
 from model.adjustments import MatchContext
 from model.cross_league import fit_cross_league
 from model.dixon_coles import fit_dixon_coles
-from model.extra_markets import (first_half_markets, measure_h1_share,
+from model.extra_markets import (DEFAULT_H1_SHARE, first_half_markets,
+                                 measure_h1_share,
                                  player_scoring_rates,
                                  squad_scorer_probabilities)
 from model.predictor import (_matrix_with_rho, compute_base_rates,
@@ -40,8 +41,9 @@ from model.predictor import (_matrix_with_rho, compute_base_rates,
                             predict_with_market, summarise_signal,
                             team_strength_table)
 from model.corners import fit_corners
-from sources import (espn, european, football_data_org, historical, odds_live,
-                     openfootball, results as results_src)
+from sources import (espn, european, football_data_org, historical,
+                     international, odds_live, openfootball,
+                     results as results_src)
 from sources.odds_history import build_name_map, normalise
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -99,6 +101,7 @@ LEAGUE_NAMES = {
     "serie-a": "Serie A",
     "bundesliga": "Bundesliga",
     "ligue-1": "Ligue 1",
+    "nations-league": "Nations League",
 }
 
 
@@ -414,6 +417,215 @@ def build_league(league: str, no_remote: bool = False) -> dict:
         "next_fixture_utc": upcoming_kickoff,
         "history": archived,
         "accuracy": history_mod.accuracy_summary(archived),
+        "model": {
+            "xi": MODEL_XI,
+            "ridge": MODEL_RIDGE,
+            "home_advantage": round(fit.home_advantage, 4),
+            "rho": round(fit.rho, 4),
+            "trained_on_matches": fit.n_matches,
+            "converged": fit.converged,
+        },
+    }
+
+
+def group_standings(results: pd.DataFrame) -> list[dict]:
+    """
+    Bảng xếp hạng Nations League, tách theo từng bảng đấu.
+
+    Khác giải quốc nội ở chỗ đây là 16 bảng nhỏ bốn đội chứ không phải một
+    bảng lớn, nên mỗi dòng mang thêm trường "group" để giao diện tách ra.
+
+    LƯU Ý VỀ LUẬT: UEFA phân định hai đội bằng điểm ở chỗ đối đầu trực tiếp
+    TRƯỚC hiệu số bàn thắng. Ở đây dùng điểm -> hiệu số -> bàn thắng cho đơn
+    giản, nên thứ tự hai đội bằng điểm có thể lệch so với bảng chính thức.
+    Ghi ra đây để không ai đọc nhầm đó là bảng chuẩn của UEFA.
+    """
+    if results.empty or "group" not in results.columns:
+        return []
+
+    out = []
+    for group_name, part in results.dropna(subset=["group"]).groupby("group"):
+        part = part.copy()
+        part["season"] = 0
+        rows = compute_standings(part, 0)
+        for r in rows:
+            r["group"] = group_name
+        out.extend(rows)
+    # Xếp theo tên bảng (A1, A2, ... D2) rồi theo thứ hạng trong bảng.
+    out.sort(key=lambda r: (str(r.get("group")), r.get("position", 99)))
+    return out
+
+
+def build_nations_league() -> dict:
+    """
+    Dựng dữ liệu Nations League.
+
+    Ba khác biệt so với giải CLB, đều bắt nguồn từ việc đây là bóng đá đội tuyển:
+
+      1. Tập khớp gộp MỌI loại trận giữa các đội tuyển UEFA (giao hữu, vòng
+         loại World Cup, vòng loại Euro), không riêng Nations League. Một đội
+         chỉ đá 6 trận Nations League mỗi hai năm — quá mỏng để ước lượng.
+         Gộp lại thì kiểm định cuốn chiếu trên 322 trận cho RPS 0,19674 và
+         đoán trúng 55,6%, so với 0,23540 và 44,4% của mốc tần suất chung.
+
+      2. KHÔNG có kèo góc. Không nguồn miễn phí nào có dữ liệu phạt góc cho
+         bóng đá đội tuyển, nên phần đó bỏ trống thay vì bịa số.
+
+      3. Bảng xếp hạng tự tính theo từng bảng đấu, vì ESPN trả rỗng cho giải
+         này và football-data.org gói miễn phí không có nó.
+    """
+    print(f"\n=== {LEAGUE_NAMES['nations-league']} ===")
+
+    history_pool = international.results()
+    try:
+        fresh = international.recent()
+    except Exception as exc:
+        print(f"  kết quả mới: bỏ qua ({type(exc).__name__})")
+        fresh = pd.DataFrame()
+
+    # Bộ dữ liệu cộng đồng cập nhật sau mỗi đợt tập trung nên hay trễ vài tuần.
+    # Không vá thì mô hình mù tịt về đợt đấu gần nhất.
+    if len(fresh):
+        newer = fresh[fresh["date"] > history_pool["date"].max()]
+        if len(newer):
+            add = newer[["date", "home_team", "away_team", "home_goals",
+                         "away_goals", "result"]].copy()
+            add["league"] = "nations-league"
+            add["season"] = add["date"].dt.year
+            history_pool = pd.concat([history_pool, add], ignore_index=True)
+            print(f"  kết quả mới: +{len(newer)} trận từ ESPN")
+    results = history_pool.sort_values("date").reset_index(drop=True)
+    print(f"  lịch sử: {len(results)} trận ({results['date'].min().date()} -> "
+          f"{results['date'].max().date()})")
+
+    league_dir = OUT_DIR / "nations-league"
+    league_dir.mkdir(parents=True, exist_ok=True)
+    espn_details = espn.details_for_dates("nations-league", espn.recent_days(14))
+    archived, newly, mended = history_mod.archive_finished(
+        "nations-league", league_dir, results, espn_details=espn_details
+    )
+    if newly:
+        print(f"  lịch sử: +{newly} trận vừa đá xong (tổng {len(archived)})")
+    if mended:
+        print(f"  lịch sử: sửa lại {mended} bản ghi cũ")
+
+    fit = fit_dixon_coles(
+        results["home_team"], results["away_team"],
+        results["home_goals"], results["away_goals"],
+        match_dates=results["date"].values,
+        xi=MODEL_XI, ridge=MODEL_RIDGE,
+    )
+    print(f"  mô hình: hội tụ={fit.converged}, sân nhà={fit.home_advantage:+.3f}, "
+          f"rho={fit.rho:+.3f}")
+
+    standings = group_standings(fresh)
+    crest_by_team = {}
+    try:
+        crest_by_team = international.crests()
+    except Exception:
+        pass
+    for row in standings:
+        row["crest"] = crest_by_team.get(row["team"])
+    print(f"  bảng xếp hạng: {len(standings)} đội trong "
+          f"{len({r['group'] for r in standings})} bảng")
+
+    fixtures = international.upcoming()
+    now_utc = datetime.now(timezone.utc)
+
+    def within(days: int):
+        horizon = now_utc + timedelta(days=days)
+        if not len(fixtures):
+            return fixtures
+        keep = []
+        for ko in fixtures["kickoff_utc"]:
+            try:
+                t = datetime.fromisoformat(str(ko).replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                keep.append(False); continue
+            keep.append(now_utc <= t <= horizon)
+        return fixtures[pd.Series(keep, index=fixtures.index)]
+
+    days = FIXTURE_WINDOW_DAYS
+    window = within(days)
+    if len(window) < MIN_FIXTURES_BEFORE_WIDENING:
+        days = CUP_FIXTURE_WINDOW_DAYS
+        window = within(days)
+    upcoming_kickoff = next_kickoff(fixtures["kickoff_utc"], now_utc) if len(fixtures) else None
+    print(f"  lịch: {len(window)} trận trong {days} ngày tới")
+
+    # Không có nguồn nào cho tỷ lệ bàn hiệp 1 của bóng đá đội tuyển: ESPN chỉ
+    # có chi tiết vài chục trận gần nhất, dưới xa ngưỡng 300 trận cần thiết để
+    # con số có ý nghĩa. Dùng mức mặc định và nói rõ trong giao diện.
+    h1_share, h1_n = DEFAULT_H1_SHARE, 0
+    base_rates = compute_base_rates(results)
+
+    odds_index = {}
+    if odds_live.has_key():
+        try:
+            events = odds_live.fetch_odds("nations-league")
+            odds_index = _index_odds(events, window)
+            print(f"  kèo: khớp {len(odds_index)}/{len(window)} trận")
+        except Exception as exc:
+            print(f"  kèo: bỏ qua ({type(exc).__name__}: {exc})")
+
+    predictions = []
+    for _, f in window.iterrows():
+        pred = predict_match(fit, f["home_team"], f["away_team"], allow_unknown=True)
+        pred["fixture"] = {
+            "date": pd.Timestamp(f["date"]).strftime("%Y-%m-%d"),
+            "time": None,
+            "kickoff_utc": f.get("kickoff_utc"),
+            "round": f.get("group"),
+            "league": "nations-league",
+        }
+        pred["head_to_head"] = head_to_head(results, f["home_team"], f["away_team"])
+        # Không có nguồn dữ liệu phạt góc cho bóng đá đội tuyển.
+        pred["corners"] = None
+
+        event = odds_index.get((f["home_team"], f["away_team"]))
+        pred["market"] = (
+            predict_with_market(
+                fit, pred,
+                event["odds_home"], event["odds_draw"], event["odds_away"],
+                odds_source=event.get("odds_source", "unknown"),
+                total_line=event.get("total_line"),
+                handicap=event.get("handicap"),
+            )
+            if event else {"available": False, "reason": "chưa có kèo"}
+        )
+        _eg = (pred["market"]["expected_goals"]
+               if (pred.get("market") or {}).get("available") else pred["expected_goals"])
+        pred["first_half"] = first_half_markets(_eg["home"], _eg["away"], h1_share)
+        # Đánh dấu là mức mặc định để giao diện không nói dối rằng con số này
+        # được đo trên chính giải này.
+        pred["first_half"]["share_measured"] = False
+        pred["signal"] = summarise_signal(pred, base_rates)
+        pred["handicap"] = market_handicap(pred, event, f["home_team"], f["away_team"])
+        predictions.append(pred)
+
+    print(f"  đã sinh {len(predictions)} dự đoán")
+
+    playing = sorted(set(window["home_team"]) | set(window["away_team"])) if len(window) else []
+    strength = team_strength_table(fit)
+    strength = [r for r in strength if r["team"] in playing] if playing else strength
+    for i, row in enumerate(strength, 1):
+        row["rank"] = i
+    print(f"  bảng sức mạnh: {len(strength)} đội")
+
+    return {
+        "league": "nations-league",
+        "name": LEAGUE_NAMES["nations-league"],
+        "season": CURRENT_SEASON,
+        "season_progress": 0.0,
+        "standings": standings,
+        "strength": strength,
+        "predictions": predictions,
+        "next_fixture_utc": upcoming_kickoff,
+        "history": archived,
+        "accuracy": history_mod.accuracy_summary(archived),
+        # Bảng xếp hạng chỉ có các đội ĐÃ đá, trong khi lịch có cả 55 đội,
+        # nên logo phải đi theo tệp riêng thay vì bám vào bảng xếp hạng.
+        "crests": crest_by_team,
         "model": {
             "xi": MODEL_XI,
             "ridge": MODEL_RIDGE,
@@ -1005,7 +1217,7 @@ def write_index(out_dir: Path, built: list[dict]) -> None:
         merged[entry["id"]] = entry
 
     # Giữ thứ tự cố định để tab trong app không nhảy chỗ giữa các lần build.
-    order = ["premier-league", "la-liga", "champions-league"]
+    order = ["premier-league", "la-liga", "champions-league", "nations-league"]
     leagues = sorted(
         merged.values(),
         key=lambda e: (order.index(e["id"]) if e["id"] in order else len(order), e["id"]),
@@ -1039,7 +1251,8 @@ def write_index(out_dir: Path, built: list[dict]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Dựng dữ liệu tĩnh cho app")
     parser.add_argument("--leagues", nargs="+",
-                        default=["premier-league", "la-liga", "champions-league"])
+                        default=["premier-league", "la-liga", "champions-league",
+                                 "nations-league"])
     parser.add_argument("--no-remote", action="store_true",
                         help="Chỉ dùng nguồn không cần API key")
     parser.add_argument("--out", default=str(OUT_DIR))
@@ -1059,11 +1272,12 @@ def main() -> None:
     built = []
     for league in args.leagues:
         try:
-            payload = (
-                build_champions_league()
-                if league == "champions-league"
-                else build_league(league, no_remote=args.no_remote)
-            )
+            if league == "champions-league":
+                payload = build_champions_league()
+            elif league == "nations-league":
+                payload = build_nations_league()
+            else:
+                payload = build_league(league, no_remote=args.no_remote)
         except Exception as exc:
             # Một giải hỏng không được làm sập cả lần dựng.
             print(f"  LỖI {league}: {type(exc).__name__}: {exc}")
@@ -1074,6 +1288,8 @@ def main() -> None:
         for key in ("standings", "strength", "predictions", "history"):
             dump_json(league_dir / f"{key}.json", payload.get(key, []))
         dump_json(league_dir / "model.json", payload["model"], indent=2)
+        if payload.get("crests"):
+            dump_json(league_dir / "crests.json", payload["crests"])
         built.append({
             "id": league,
             "name": payload["name"],

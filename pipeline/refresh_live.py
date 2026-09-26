@@ -200,6 +200,23 @@ def league_results(league: str):
         return pd.DataFrame(rows, columns=[
             "date", "home_team", "away_team", "home_goals", "away_goals", "result"])
 
+    if league == "nations-league":
+        from sources import international
+        pool = international.results()
+        try:
+            fresh = international.recent()
+        except Exception:
+            fresh = pd.DataFrame()
+        if len(fresh):
+            newer = fresh[fresh["date"] > pool["date"].max()]
+            if len(newer):
+                add = newer[["date", "home_team", "away_team", "home_goals",
+                             "away_goals", "result"]].copy()
+                add["league"] = "nations-league"
+                add["season"] = add["date"].dt.year
+                pool = pd.concat([pool, add], ignore_index=True)
+        return pool.sort_values("date").reset_index(drop=True)
+
     return results_src.load_with_recent(
         [league], list(range(CURRENT_SEASON - 1, CURRENT_SEASON + 1)), verbose=False
     )
@@ -209,6 +226,11 @@ def refresh_standings(league: str) -> bool:
     """Ghi lại bảng xếp hạng nếu có thay đổi. Trả True khi có cập nhật."""
     path = DATA / league / "standings.json"
     if not path.exists():
+        return False
+
+    if league == "nations-league":
+        # Giải này không có ở football-data.org gói miễn phí; bảng xếp hạng
+        # được tính từ kết quả trong build.py nên bỏ qua ở đây.
         return False
 
     try:
@@ -326,7 +348,7 @@ def main() -> None:
     load_env()
     lineups = tables = archived = 0
 
-    for league in ("premier-league", "la-liga", "champions-league"):
+    for league in ("premier-league", "la-liga", "champions-league", "nations-league"):
         if refresh_standings(league):
             tables += 1
             print(f"  {league}: bảng xếp hạng có thay đổi")

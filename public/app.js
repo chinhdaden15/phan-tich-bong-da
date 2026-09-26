@@ -137,6 +137,16 @@ async function crestMap(league) {
   } catch (err) {
     // Thiếu logo không đáng để hỏng cả màn hình.
   }
+  // Nations League có tệp logo riêng: bảng xếp hạng chỉ chứa các đội ĐÃ đá,
+  // trong khi lịch thi đấu có cả 55 đội tuyển.
+  try {
+    const extra = await loadJSON(`${DATA}/${league}/crests.json`);
+    Object.entries(extra || {}).forEach(([team, url]) => {
+      if (url) map.set(crestKey(team), url);
+    });
+  } catch (err) {
+    // Giải nào không có tệp này thì thôi.
+  }
   crestCache.set(league, map);
   return map;
 }
@@ -683,7 +693,9 @@ function openSheet(p) {
     <div class="kv"><span>Bàn kỳ vọng hiệp 1</span>
       <b>${p.first_half.expected_goals.home.toFixed(2)} – ${p.first_half.expected_goals.away.toFixed(2)}</b></div>
     <div class="note">Kèo hiệp 1 do mô hình suy ra, không lấy từ nhà cái:
-      ${pct(p.first_half.share_used)} số bàn của giải này được ghi trong hiệp 1.
+      ${pct(p.first_half.share_used)} số bàn ${p.first_half.share_measured === false
+        ? "được ghi trong hiệp 1 — đây là mức chung đo trên các giải CLB, vì bóng đá đội tuyển không có đủ trận để đo riêng"
+        : "của giải này được ghi trong hiệp 1"}.
       Đã đối chiếu với kèo thật ở một trận mẫu, lệch khoảng 1 điểm phần trăm.</div>` : ""}
 
     ${handicapSection(p)}
@@ -947,23 +959,50 @@ async function renderStandings() {
     return;
   }
 
-  const body = rows.map((r) => `
-    <tr class="${zoneClass(r.position, rows.length)}">
+  // Nations League chia 16 bảng bốn đội chứ không phải một bảng lớn, nên mỗi
+  // dòng mang thêm trường "group". Có trường đó thì dựng nhiều bảng nhỏ và
+  // KHÔNG tô màu vùng xếp hạng — luật lên/xuống hạng của giải này tính theo
+  // thứ bậc trong bảng, không phải theo vị trí trong một danh sách chung.
+  const grouped = rows.some((r) => r.group);
+
+  const line = (r, total) => `
+    <tr class="${grouped ? "" : zoneClass(r.position, total)}">
       <td class="pos">${r.position}</td>
       <td class="team-cell">${crestImg(r.team)}${escapeHtml(shortName(r.team))}</td>
       <td class="num">${r.played}</td>
       <td class="num">${r.goal_difference > 0 ? "+" : ""}${r.goal_difference}</td>
       <td class="pts">${r.points}</td>
       <td style="padding-right:12px"><span class="form">${(r.form || []).map((f) => `<i class="${f}">${f}</i>`).join("")}</span></td>
-    </tr>`).join("");
+    </tr>`;
+
+  const head = `<thead><tr><th></th><th>Đội</th><th>Tr</th><th>HS</th><th>Đ</th>
+    <th style="padding-right:12px">Phong độ</th></tr></thead>`;
+
+  if (grouped) {
+    const byGroup = new Map();
+    rows.forEach((r) => {
+      const key = r.group || "—";
+      if (!byGroup.has(key)) byGroup.set(key, []);
+      byGroup.get(key).push(r);
+    });
+    view().innerHTML = [...byGroup.entries()]
+      .sort(([a], [b]) => String(a).localeCompare(String(b)))
+      .map(([name, list]) => `
+        <div class="card">
+          <div class="card-title">${escapeHtml(name)}</div>
+          <table>${head}<tbody>${list.map((r) => line(r, list.length)).join("")}</tbody></table>
+        </div>`).join("") +
+      `<div class="note">Bảng tự tính từ kết quả đã đá. UEFA phân định hai đội
+        bằng điểm ở trận đối đầu trực tiếp <strong>trước</strong> hiệu số bàn
+        thắng, còn bảng này dùng điểm → hiệu số → bàn thắng, nên thứ tự hai đội
+        bằng điểm có thể lệch so với bảng chính thức.</div>`;
+    return;
+  }
 
   view().innerHTML = `
     <div class="card">
       <div class="card-title">Bảng xếp hạng — mùa 2026/27</div>
-      <table>
-        <thead><tr><th></th><th>Đội</th><th>Tr</th><th>HS</th><th>Đ</th><th style="padding-right:12px">Phong độ</th></tr></thead>
-        <tbody>${body}</tbody>
-      </table>
+      <table>${head}<tbody>${rows.map((r) => line(r, rows.length)).join("")}</tbody></table>
     </div>
     <div class="note">${rows.length > 30
       ? "Vòng bảng Champions League 36 đội. Viền xanh lá = vào thẳng vòng 1/8 (hạng 1-8), xanh dương = đá play-off (9-24), đỏ = bị loại (25-36)."
