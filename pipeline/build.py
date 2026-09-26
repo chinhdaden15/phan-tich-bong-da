@@ -25,6 +25,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import crests as crest_store
 import history as history_mod
 import selfcheck
 from config import describe_keys, load_env
@@ -979,6 +980,34 @@ def next_kickoff(kickoffs, now_utc: datetime) -> str | None:
     return best.isoformat().replace("+00:00", "Z") if best else None
 
 
+def localise_crests(payload: dict) -> None:
+    """
+    Đổi mọi URL logo trong payload sang bản đã tải về máy chủ của app.
+
+    Làm ở đây, ngay trước khi ghi ra đĩa, để mọi giải đi qua cùng một đường —
+    logo CLB đến từ football-data.org còn cờ các nước đến từ ESPN, nhưng phía
+    giao diện thì không cần biết.
+
+    Ảnh nào tải hỏng thì giữ nguyên URL gốc: mất cache chứ không mất logo.
+    """
+    urls = {row.get("crest") for row in payload.get("standings") or []}
+    urls |= set((payload.get("crests") or {}).values())
+    urls = {u for u in urls if u and u.startswith("http")}
+    if not urls:
+        return
+
+    local = crest_store.localise(urls)
+    if not local:
+        return
+
+    for row in payload.get("standings") or []:
+        row["crest"] = local.get(row.get("crest"), row.get("crest"))
+    if payload.get("crests"):
+        payload["crests"] = {
+            team: local.get(url, url) for team, url in payload["crests"].items()
+        }
+
+
 def write_list(path: Path, rows: list, label: str) -> list:
     """
     Ghi một danh sách ra JSON, nhưng KHÔNG cho tệp rỗng đè lên tệp đang có dữ liệu.
@@ -1105,6 +1134,7 @@ def main() -> None:
 
         league_dir = out_dir / league
         league_dir.mkdir(parents=True, exist_ok=True)
+        localise_crests(payload)
         written = {}
         for key in ("standings", "strength", "predictions", "history"):
             written[key] = write_list(
@@ -1138,6 +1168,11 @@ def main() -> None:
 
     if not built:
         raise SystemExit("Không dựng được giải nào")
+
+    # Danh mục để service worker tải sẵn toàn bộ logo ngay lần mở đầu tiên.
+    n_crests = crest_store.write_manifest()
+    if n_crests:
+        print(f"\nLogo: {n_crests} tệp, đã ghi danh mục để tải sẵn khi cài đặt")
 
     write_index(out_dir, built)
 

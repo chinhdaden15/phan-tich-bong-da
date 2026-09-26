@@ -15,6 +15,7 @@
 const VERSION = "v1";
 const SHELL_CACHE = `shell-${VERSION}`;
 const DATA_CACHE = `data-${VERSION}`;
+const CREST_CACHE = `crests-${VERSION}`;
 
 const SHELL = ["./", "index.html", "styles.css", "app.js", "manifest.json", "icon.svg"];
 
@@ -33,15 +34,43 @@ self.addEventListener("install", (event) => {
             .catch(() => undefined)   // thiếu một file không được chặn cài đặt
         )
       ))
+      .then(() => precacheCrests())
       .then(() => self.skipWaiting())
   );
 });
+
+/**
+ * Tải sẵn toàn bộ logo đội và cờ ngay lúc cài đặt.
+ *
+ * Trước đây ảnh chỉ được tải khi cuộn tới, mà lại nằm trên máy chủ của bên
+ * thứ ba nên không cache được — logo hiện chậm, nhấp nháy, phải vào vài lần
+ * mới thấy đủ. Nay tải một lượt 120 tệp (~490 KB) rồi thôi.
+ *
+ * Hỏng thì bỏ qua, KHÔNG chặn việc cài đặt: thiếu logo chỉ là xấu, còn service
+ * worker không cài được thì mất luôn chế độ offline.
+ */
+function precacheCrests() {
+  return fetch("crests/manifest.json", { cache: "reload" })
+    .then((response) => (response.ok ? response.json() : []))
+    .then((files) =>
+      caches.open(CREST_CACHE).then((cache) =>
+        Promise.all(files.map((name) =>
+          cache.match(`crests/${name}`).then((hit) =>
+            hit || fetch(`crests/${name}`)
+              .then((r) => (r && r.ok ? cache.put(`crests/${name}`, r) : undefined))
+              .catch(() => undefined)
+          )
+        ))
+      )
+    )
+    .catch(() => undefined);
+}
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(
-        keys.filter((k) => k !== SHELL_CACHE && k !== DATA_CACHE)
+        keys.filter((k) => ![SHELL_CACHE, DATA_CACHE, CREST_CACHE].includes(k))
             .map((k) => caches.delete(k))
       ))
       .then(() => self.clients.claim())
@@ -54,6 +83,24 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+
+  // Logo đội và cờ: cache trước, KHÔNG kiểm tra lại máy chủ.
+  //
+  // Tên tệp là mã băm của URL nguồn, nên nội dung một tệp không bao giờ đổi —
+  // đội thay logo sẽ ra tên tệp khác. Đã có trong cache thì trả luôn, khỏi tốn
+  // một request. Quan trọng vì tab Nations League có tới 176 ô logo: kiểm tra
+  // lại từng cái mỗi lần mở app chính là thứ làm logo hiện chậm và nhấp nháy.
+  if (url.pathname.includes("/crests/")) {
+    event.respondWith(
+      caches.open(CREST_CACHE).then((cache) =>
+        cache.match(request).then((cached) => cached || fetch(request).then((response) => {
+          if (response && response.status === 200) cache.put(request, response.clone());
+          return response;
+        }))
+      )
+    );
+    return;
+  }
 
   // Dữ liệu: ưu tiên mạng, mất mạng thì lấy bản đã lưu.
   if (url.pathname.includes("/data/")) {
