@@ -394,8 +394,17 @@ def group_standings(results: pd.DataFrame) -> list[dict]:
     giản, nên thứ tự hai đội bằng điểm có thể lệch so với bảng chính thức.
     Ghi ra đây để không ai đọc nhầm đó là bảng chuẩn của UEFA.
     """
-    if results.empty or "group" not in results.columns:
+    if results.empty:
         return []
+
+    # Bảng đấu tra từ tệp cố định trong kho mã: chỉ ESPN có thông tin này mà
+    # ESPN lại bị chặn trên máy chủ, trong khi thành phần các bảng thì không
+    # đổi suốt một kỳ giải.
+    group_of = {normalise(team): g for team, g in international.groups().items()}
+    results = results.copy()
+    results["group"] = [
+        group_of.get(normalise(t)) for t in results["home_team"]
+    ]
 
     out = []
     for group_name, part in results.dropna(subset=["group"]).groupby("group"):
@@ -437,23 +446,38 @@ def build_nations_league() -> dict:
         print(f"  kết quả mới: bỏ qua ({type(exc).__name__})")
         fresh = pd.DataFrame()
 
-    # Bộ dữ liệu cộng đồng cập nhật sau mỗi đợt tập trung nên hay trễ vài tuần.
-    # Không vá thì mô hình mù tịt về đợt đấu gần nhất.
-    if len(fresh):
-        newer = fresh[fresh["date"] > history_pool["date"].max()]
+    league_dir = OUT_DIR / "nations-league"
+    league_dir.mkdir(parents=True, exist_ok=True)
+
+    # Kết quả mùa này phải TÍCH LUỸ dần, không tải lại được toàn bộ.
+    #
+    # Bộ dữ liệu cộng đồng cập nhật rất thưa — có lúc trễ cả tháng và bỏ trống
+    # nguyên một kỳ Nations League — còn ESPN thì bị chặn trên máy chủ. Nguồn
+    # duy nhất đi được mọi nơi là endpoint scores của The Odds API, nhưng cửa
+    # sổ của nó chỉ 3 ngày. Nên mỗi lần chạy gộp thêm phần mới vào tệp đã lưu.
+    season = international.merge_season_results(
+        league_dir / "season_results.json",
+        international.scores_from_odds(international.fetch_scores()),
+        fresh,
+    )
+    print(f"  kết quả mùa này: {len(season)} trận đã lưu")
+
+    for extra in (fresh, season):
+        if not len(extra):
+            continue
+        newer = extra[extra["date"] > history_pool["date"].max()]
         if len(newer):
             add = newer[["date", "home_team", "away_team", "home_goals",
                          "away_goals", "result"]].copy()
             add["league"] = "nations-league"
             add["season"] = add["date"].dt.year
             history_pool = pd.concat([history_pool, add], ignore_index=True)
-            print(f"  kết quả mới: +{len(newer)} trận từ ESPN")
-    results = history_pool.sort_values("date").reset_index(drop=True)
+
+    results = history_pool.drop_duplicates(
+        subset=["date", "home_team", "away_team"], keep="last"
+    ).sort_values("date").reset_index(drop=True)
     print(f"  lịch sử: {len(results)} trận ({results['date'].min().date()} -> "
           f"{results['date'].max().date()})")
-
-    league_dir = OUT_DIR / "nations-league"
-    league_dir.mkdir(parents=True, exist_ok=True)
     espn_details = espn.details_for_dates("nations-league", espn.recent_days(14))
     archived, newly, mended = history_mod.archive_finished(
         "nations-league", league_dir, results, espn_details=espn_details
@@ -472,7 +496,7 @@ def build_nations_league() -> dict:
     print(f"  mô hình: hội tụ={fit.converged}, sân nhà={fit.home_advantage:+.3f}, "
           f"rho={fit.rho:+.3f}")
 
-    standings = group_standings(fresh)
+    standings = group_standings(season)
     crest_by_team = {}
     try:
         crest_by_team = international.crests()

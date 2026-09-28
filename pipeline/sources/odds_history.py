@@ -191,6 +191,12 @@ TEAM_ALIASES = {
     # ESPN gọi Deportivo La Coruña là "Deportivo", mà _NOISE lại xoá đúng từ
     # đó nên tên rút về chuỗi rỗng. Chuyển thẳng sang dạng sau khi lọc.
     "deportivo": "la coruna",
+    # Đội tuyển quốc gia: nhà cái và ESPN gọi khác nhau.
+    "czech republic": "czechia",
+    "turkey": "turkiye",
+    "bosnia and herzegovina": "bosnia herzegovina",
+    "republic of ireland": "ireland",
+    "north macedonia": "macedonia",
 }
 
 # "and" nằm trong danh sách vì nguồn kèo viết "Brighton and Hove Albion"

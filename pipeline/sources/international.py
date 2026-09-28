@@ -19,6 +19,7 @@ hệ số sân nhà sẽ bị kéo tụt và mọi dự đoán đều lệch.
 from __future__ import annotations
 
 import io
+import json
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -214,6 +215,150 @@ def recent(days_back: int = 120) -> pd.DataFrame:
         for h, a in zip(df["home_goals"], df["away_goals"])
     ]
     return df.sort_values("date").reset_index(drop=True)
+
+
+GROUPS_FILE = Path(__file__).resolve().parents[1] / "data" / "nations_league_groups.json"
+
+
+def groups() -> dict[str, str]:
+    """
+    Bản đồ đội tuyển -> bảng đấu, lưu cố định trong kho mã.
+
+    VÌ SAO KHÔNG LẤY ĐỘNG: chỉ ESPN có thông tin bảng đấu, mà ESPN lại chặn
+    dải IP của máy chủ GitHub Actions. Thành phần các bảng cố định suốt một kỳ
+    Nations League nên lưu sẵn một lần là đủ, và bot không cần gọi ESPN nữa.
+
+    Sang kỳ sau thì sinh lại tệp này bằng international._scan() trên máy cá nhân.
+    """
+    try:
+        return json.loads(GROUPS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def canonical(name: str) -> str:
+    """
+    Quy tên đội tuyển về MỘT dạng duy nhất, lấy theo tệp bảng đấu làm chuẩn.
+
+    Mỗi nguồn viết một kiểu: nhà cái ghi "Turkey", "Czech Republic",
+    "Bosnia & Herzegovina"; ESPN ghi "Türkiye", "Czechia", "Bosnia-Herzegovina".
+    Không quy về một mối thì cùng một đội thành hai dòng trong bảng xếp hạng,
+    mỗi dòng một nửa số trận — đúng lỗi đã gặp: 57 dòng cho 54 đội.
+    """
+    from .odds_history import normalise
+
+    global _CANON
+    if _CANON is None:
+        _CANON = {normalise(team): team for team in groups()}
+    return _CANON.get(normalise(name), name)
+
+
+_CANON: dict[str, str] | None = None
+
+
+def scores_from_odds(events: list[dict]) -> pd.DataFrame:
+    """
+    Kết quả các trận vừa đá, lấy từ endpoint scores của The Odds API.
+
+    VÌ SAO CẦN: đây là nguồn kết quả DUY NHẤT chạy được trên máy chủ. Bộ dữ
+    liệu cộng đồng cập nhật rất thưa (có lúc trễ cả tháng và bỏ trống nguyên
+    một kỳ Nations League), còn ESPN thì bị chặn. Endpoint này dùng chung API
+    key với phần kèo nên đi được mọi nơi.
+
+    Cửa sổ tối đa của gói đang dùng là 3 ngày, nên kết quả phải được TÍCH LUỸ
+    dần qua các lần chạy chứ không tải lại toàn bộ mỗi lần.
+    """
+    rows = []
+    for e in events or []:
+        if not e.get("completed"):
+            continue
+        home, away = e.get("home_team"), e.get("away_team")
+        scores = {s.get("name"): s.get("score") for s in (e.get("scores") or [])}
+        try:
+            hg, ag = int(scores[home]), int(scores[away])
+        except (KeyError, TypeError, ValueError):
+            continue
+        rows.append({
+            "date": str(e.get("commence_time"))[:10],
+            "home_team": canonical(home),
+            "away_team": canonical(away),
+            "home_goals": hg,
+            "away_goals": ag,
+            "result": "H" if hg > ag else ("A" if hg < ag else "D"),
+        })
+
+    if not rows:
+        return pd.DataFrame(columns=["date", "home_team", "away_team",
+                                     "home_goals", "away_goals", "result"])
+    df = pd.DataFrame(rows)
+    df["date"] = pd.to_datetime(df["date"])
+    return df.sort_values("date").reset_index(drop=True)
+
+
+def fetch_scores(days_from: int = 3) -> list[dict]:
+    """Gọi endpoint scores. Hỏng thì trả rỗng, không làm sập lần dựng."""
+    import os
+
+    key = os.environ.get("ODDS_API_KEY", "").strip()
+    if not key:
+        return []
+    try:
+        response = requests.get(
+            "https://api.the-odds-api.com/v4/sports/soccer_uefa_nations_league/scores",
+            params={"apiKey": key, "daysFrom": days_from},
+            timeout=25,
+        )
+        response.raise_for_status()
+        return response.json()
+    except Exception:
+        return []
+
+
+def merge_season_results(path, *frames) -> pd.DataFrame:
+    """
+    Gộp kết quả mới vào tệp đã lưu và ghi lại. Trả về toàn bộ kết quả mùa này.
+
+    Tệp này chỉ LỚN dần: cửa sổ của nguồn chỉ 3 ngày nên mất một trận là mất
+    vĩnh viễn, không tải lại được. Khoá trùng lặp là (ngày, đội nhà, đội khách),
+    và bản mới ghi đè bản cũ để tỷ số được sửa nếu nguồn đính chính.
+    """
+    saved = pd.DataFrame(columns=["date", "home_team", "away_team",
+                                  "home_goals", "away_goals", "result"])
+    if Path(path).exists():
+        try:
+            rows = json.loads(Path(path).read_text(encoding="utf-8"))
+            if rows:
+                saved = pd.DataFrame(rows)
+                saved["date"] = pd.to_datetime(saved["date"])
+        except (OSError, ValueError):
+            pass
+
+    parts = [saved] + [f[saved.columns] for f in frames if f is not None and len(f)]
+    merged = pd.concat(parts, ignore_index=True)
+    # Quy tên về một dạng TRƯỚC khi khử trùng lặp, nếu không "Turkey vs France"
+    # và "Türkiye vs France" thành hai trận khác nhau.
+    for col in ("home_team", "away_team"):
+        merged[col] = merged[col].map(canonical)
+    if merged.empty:
+        return merged
+
+    # Gộp với khung rỗng làm cột ngày rơi về kiểu object, nên ép lại trước khi
+    # sắp xếp và định dạng.
+    merged["date"] = pd.to_datetime(merged["date"], errors="coerce")
+    merged = (merged.dropna(subset=["date"])
+                    .drop_duplicates(subset=["date", "home_team", "away_team"],
+                                     keep="last")
+                    .sort_values("date").reset_index(drop=True))
+    if merged.empty:
+        return merged
+
+    out = merged.copy()
+    out["date"] = out["date"].dt.strftime("%Y-%m-%d")
+    Path(path).write_text(
+        json.dumps(out.to_dict("records"), ensure_ascii=False,
+                   allow_nan=False, separators=(",", ":")),
+        encoding="utf-8")
+    return merged
 
 
 def crests() -> dict[str, str]:

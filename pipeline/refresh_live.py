@@ -71,20 +71,33 @@ def league_results(league: str):
 
     if league == "nations-league":
         from sources import international
+
         pool = international.results()
+        # Gộp kết quả mới vào tệp tích luỹ y như build.py, để job chạy ba tiếng
+        # một lần cũng lưu được trận vừa đá. Nguồn ESPN chỉ dùng được trên máy
+        # cá nhân nên phần chính là endpoint scores của nhà cái.
         try:
             fresh = international.recent()
         except Exception:
             fresh = pd.DataFrame()
-        if len(fresh):
-            newer = fresh[fresh["date"] > pool["date"].max()]
+        season = international.merge_season_results(
+            DATA / league / "season_results.json",
+            international.scores_from_odds(international.fetch_scores()),
+            fresh,
+        )
+        for extra in (fresh, season):
+            if not len(extra):
+                continue
+            newer = extra[extra["date"] > pool["date"].max()]
             if len(newer):
                 add = newer[["date", "home_team", "away_team", "home_goals",
                              "away_goals", "result"]].copy()
                 add["league"] = "nations-league"
                 add["season"] = add["date"].dt.year
                 pool = pd.concat([pool, add], ignore_index=True)
-        return pool.sort_values("date").reset_index(drop=True)
+        return (pool.drop_duplicates(subset=["date", "home_team", "away_team"],
+                                     keep="last")
+                    .sort_values("date").reset_index(drop=True))
 
     return results_src.load_with_recent(
         [league], list(range(CURRENT_SEASON - 1, CURRENT_SEASON + 1)), verbose=False
