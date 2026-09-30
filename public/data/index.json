@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-30T16:06:06+00:00",
+  "generated_at": "2026-09-30T21:33:39+00:00",
   "refresh": {
     "interval_hours": 3,
     "minute_utc": 5,
@@ -84,7 +84,7 @@
       "id": "champions-league",
       "name": "Champions League",
       "season": 2026,
-      "fixtures": 45,
+      "fixtures": 54,
       "teams": 36,
       "history": 16,
       "accuracy": {
