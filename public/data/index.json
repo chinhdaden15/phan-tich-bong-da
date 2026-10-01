@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-01T07:44:18+00:00",
+  "generated_at": "2026-10-01T16:43:02+00:00",
   "refresh": {
     "interval_hours": 3,
     "minute_utc": 5,
@@ -121,7 +121,7 @@
       "id": "nations-league",
       "name": "Nations League",
       "season": 2026,
-      "fixtures": 33,
+      "fixtures": 51,
       "teams": 54,
       "history": 31,
       "accuracy": {
@@ -152,7 +152,7 @@
           }
         }
       },
-      "next_fixture_utc": "2026-10-01T16:00:00Z"
+      "next_fixture_utc": "2026-10-01T18:45:00Z"
     }
   ],
   "model": {
