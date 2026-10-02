@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-02T15:59:41+00:00",
+  "generated_at": "2026-10-02T21:28:40+00:00",
   "refresh": {
     "interval_hours": 3,
     "minute_utc": 5,
@@ -47,7 +47,7 @@
       "id": "la-liga",
       "name": "La Liga",
       "season": 2026,
-      "fixtures": 10,
+      "fixtures": 11,
       "teams": 20,
       "history": 22,
       "accuracy": {
@@ -121,18 +121,18 @@
       "id": "nations-league",
       "name": "Nations League",
       "season": 2026,
-      "fixtures": 43,
+      "fixtures": 34,
       "teams": 54,
-      "history": 39,
+      "history": 48,
       "accuracy": {
-        "matches": 39,
-        "top_pick_correct": 22,
-        "top_pick_accuracy": 0.5641,
-        "mean_brier": 0.5306,
+        "matches": 48,
+        "top_pick_correct": 27,
+        "top_pick_accuracy": 0.5625,
+        "mean_brier": 0.5446,
         "score_exact": {
-          "checked": 39,
-          "correct": 7,
-          "accuracy": 0.1795
+          "checked": 48,
+          "correct": 8,
+          "accuracy": 0.1667
         },
         "by_signal_strength": {
           "rõ": {
@@ -141,18 +141,18 @@
             "accuracy": 0.5
           },
           "vừa": {
-            "matches": 19,
-            "correct": 16,
-            "accuracy": 0.8421
+            "matches": 24,
+            "correct": 17,
+            "accuracy": 0.7083
           },
           "mơ hồ": {
-            "matches": 16,
-            "correct": 12,
-            "accuracy": 0.75
+            "matches": 20,
+            "correct": 16,
+            "accuracy": 0.8
           }
         }
       },
-      "next_fixture_utc": "2026-10-02T16:00:00Z"
+      "next_fixture_utc": "2026-10-03T13:00:00Z"
     }
   ],
   "model": {
