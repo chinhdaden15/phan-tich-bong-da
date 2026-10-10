@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-10T07:43:28+00:00",
+  "generated_at": "2026-10-10T15:34:51+00:00",
   "refresh": {
     "interval_hours": 3,
     "minute_utc": 5,
@@ -10,24 +10,24 @@
       "id": "premier-league",
       "name": "Ngoại hạng Anh",
       "season": 2026,
-      "fixtures": 21,
+      "fixtures": 19,
       "teams": 20,
-      "history": 18,
+      "history": 19,
       "accuracy": {
-        "matches": 18,
-        "top_pick_correct": 6,
-        "top_pick_accuracy": 0.3333,
-        "mean_brier": 0.7348,
+        "matches": 19,
+        "top_pick_correct": 7,
+        "top_pick_accuracy": 0.3684,
+        "mean_brier": 0.7053,
         "score_exact": {
-          "checked": 18,
+          "checked": 19,
           "correct": 1,
-          "accuracy": 0.0556
+          "accuracy": 0.0526
         },
         "by_signal_strength": {
           "rõ": {
-            "matches": 3,
-            "correct": 1,
-            "accuracy": 0.3333
+            "matches": 4,
+            "correct": 2,
+            "accuracy": 0.5
           },
           "vừa": {
             "matches": 4,
@@ -41,13 +41,13 @@
           }
         }
       },
-      "next_fixture_utc": "2026-10-10T11:30:00Z"
+      "next_fixture_utc": "2026-10-10T16:30:00Z"
     },
     {
       "id": "la-liga",
       "name": "La Liga",
       "season": 2026,
-      "fixtures": 20,
+      "fixtures": 18,
       "teams": 20,
       "history": 23,
       "accuracy": {
@@ -78,7 +78,7 @@
           }
         }
       },
-      "next_fixture_utc": "2026-10-10T12:00:00Z"
+      "next_fixture_utc": "2026-10-10T16:30:00Z"
     },
     {
       "id": "champions-league",
@@ -121,7 +121,7 @@
       "id": "nations-league",
       "name": "Nations League",
       "season": 2026,
-      "fixtures": 18,
+      "fixtures": 19,
       "teams": 54,
       "history": 66,
       "accuracy": {
