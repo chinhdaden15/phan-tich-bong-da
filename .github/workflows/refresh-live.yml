@@ -42,6 +42,11 @@ jobs:
       - name: Cập nhật BXH, lịch sử và đội hình
         env:
           FOOTBALL_DATA_ORG_KEY: ${{ secrets.FOOTBALL_DATA_ORG_KEY }}
+          # Thiếu khoá này thì phần kết quả Nations League im lặng trả rỗng:
+          # bảng xếp hạng và lịch sử của giải đó không bao giờ được cập nhật
+          # giữa hai lần dựng đầy đủ, vì ESPN bị chặn trên máy chủ nên nguồn
+          # kết quả duy nhất là endpoint scores của The Odds API.
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: python pipeline/refresh_live.py
 
       - name: Commit nếu có đội hình mới
