@@ -143,6 +143,24 @@ def refresh_standings(league: str) -> bool:
     return True
 
 
+def kickoff(pred: dict) -> datetime | None:
+    """
+    Giờ bóng lăn của một dự đoán, hoặc None nếu thiếu hay sai định dạng.
+
+    Hàm này từng bị xoá nhầm khi dọn phần dự đoán người ghi bàn: nó nằm lọt
+    giữa hai hàm bị bỏ nên bị cắt theo. Hậu quả là refresh_live.py ném
+    NameError ngay lần chạy đầu và job làm mới chết lặng suốt nhiều tuần —
+    bảng xếp hạng và lịch sử không còn được cập nhật giữa hai lần dựng.
+    """
+    raw = (pred.get("fixture") or {}).get("kickoff_utc")
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+
+
 def has_finished_since_last_run(league: str) -> bool:
     """
     Có trận nào đã đá xong mà chưa vào lịch sử không?

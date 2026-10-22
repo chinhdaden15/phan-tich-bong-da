@@ -246,6 +246,42 @@ def check_index_matches_files(errors: list[str]) -> None:
                 )
 
 
+def check_python_names(errors: list[str]) -> None:
+    """
+    Bắt tên chưa định nghĩa trong mã Python bằng pyflakes.
+
+    VÌ SAO CẦN: ast.parse() chỉ kiểm tra cú pháp, còn import module cũng không
+    chạm tới thân hàm — nên một hàm bị xoá nhầm trong khi chỗ khác vẫn gọi nó
+    sẽ lọt qua hết mọi kiểm tra và chỉ nổ lúc chạy thật.
+
+    Đã xảy ra: lần dọn phần dự đoán người ghi bàn đã cắt nhầm hàm kickoff()
+    nằm lọt giữa hai hàm cần bỏ. refresh_live.py ném NameError ngay dòng đầu
+    và job làm mới chết lặng nhiều tuần, trong khi selfcheck vẫn báo "đạt".
+
+    Thiếu pyflakes thì bỏ qua, không chặn build — giống cách kiểm tra cú pháp
+    JavaScript bằng node.
+    """
+    try:
+        from pyflakes import api as pyflakes_api, reporter as pyflakes_reporter
+    except ImportError:
+        return
+
+    import io as _io
+
+    out, err = _io.StringIO(), _io.StringIO()
+    reporter = pyflakes_reporter.Reporter(out, err)
+    for path in sorted(ROOT.rglob("*.py")):
+        if ".venv" in path.parts or "__pycache__" in path.parts:
+            continue
+        pyflakes_api.checkPath(str(path), reporter)
+
+    for line in (out.getvalue() + err.getvalue()).splitlines():
+        # Chỉ chặn vì tên chưa định nghĩa; import thừa là chuyện gọn gàng,
+        # không phải lỗi làm sập lúc chạy.
+        if "undefined name" in line:
+            errors.append(f"pyflakes: {line.strip()}")
+
+
 def run(verbose: bool = True) -> list[str]:
     """Chạy toàn bộ kiểm tra. Trả về danh sách lỗi, rỗng nghĩa là đạt."""
     errors: list[str] = []
@@ -255,6 +291,7 @@ def run(verbose: bool = True) -> list[str]:
     check_standings(errors)
     check_history(errors)
     check_index_matches_files(errors)
+    check_python_names(errors)
 
     if verbose:
         if errors:
@@ -266,7 +303,7 @@ def run(verbose: bool = True) -> list[str]:
         else:
             print("\nTự kiểm tra: đạt "
                   f"({len(REQUIRED_JS)} hàm, JSON hợp lệ, dự đoán/bảng xếp hạng đủ trường, "
-                  "lịch sử chấm điểm đúng, index khớp tệp)")
+                  "lịch sử chấm điểm đúng, index khớp tệp, mã Python không có tên lạ)")
     return errors
 
 
