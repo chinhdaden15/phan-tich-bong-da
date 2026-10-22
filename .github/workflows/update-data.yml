@@ -70,5 +70,17 @@ jobs:
             echo "Dữ liệu không đổi, bỏ qua commit."
           else
             git commit -m "chore: cập nhật dữ liệu $(date -u '+%Y-%m-%d %H:%M UTC')"
-            git push
+            # Hai workflow có thể chạy chồng giờ và cùng đẩy lên. Thiếu bước
+            # rebase này thì lần chạy nào tới sau bị từ chối và cả job báo
+            # hỏng, dù dữ liệu hoàn toàn bình thường — đã xảy ra lúc 07:05.
+            #
+            # --strategy-option=theirs: khi rebase, "theirs" là commit đang
+            # được phát lại, tức dữ liệu vừa dựng của chính lần chạy này. Đúng
+            # thứ cần giữ, và cần thiết vì .gitattributes đặt các tệp dữ liệu
+            # là merge=binary nên không thể tự trộn.
+            for i in 1 2 3; do
+              git pull --rebase --strategy-option=theirs && git push && break
+              echo "Đẩy lên thất bại, thử lại lần $i..."
+              sleep 5
+            done
           fi
