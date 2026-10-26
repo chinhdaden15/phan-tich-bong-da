@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-26T16:19:09+00:00",
+  "generated_at": "2026-10-26T20:25:12+00:00",
   "refresh": {
     "interval_hours": 3,
     "minute_utc": 5,
@@ -173,5 +173,6 @@
       "configured": true,
       "purpose": "kết quả và lịch, không cần key"
     }
-  }
+  },
+  "last_light_refresh": "2026-10-26T20:25:12+00:00"
 }
