@@ -8,7 +8,7 @@
   "converged": true,
   "league_levels": {
     "austrian-bundesliga": -0.479,
-    "belgian-pro-league": -0.204,
+    "belgian-pro-league": -0.203,
     "bundesliga": 0.29,
     "eredivisie": -0.283,
     "greek-super-league": -0.421,
@@ -16,7 +16,7 @@
     "ligue-1": 0.585,
     "premier-league": 0.819,
     "primeira-liga": -0.136,
-    "scottish-premiership": -0.383,
+    "scottish-premiership": -0.384,
     "serie-a": 0.169,
     "turkish-super-lig": -0.236,
     "unknown": -0.045
