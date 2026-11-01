@@ -1,24 +1,24 @@
 {
   "xi": 0.0018,
   "ridge": 2.0,
-  "home_advantage": 0.1985,
-  "rho": -0.0431,
-  "trained_on_matches": 9959,
+  "home_advantage": 0.1983,
+  "rho": -0.0417,
+  "trained_on_matches": 9967,
   "bridge_matches": 378,
   "converged": true,
   "league_levels": {
     "austrian-bundesliga": -0.475,
     "belgian-pro-league": -0.202,
     "bundesliga": 0.295,
-    "eredivisie": -0.294,
+    "eredivisie": -0.296,
     "greek-super-league": -0.425,
-    "la-liga": 0.317,
+    "la-liga": 0.318,
     "ligue-1": 0.576,
     "premier-league": 0.822,
     "primeira-liga": -0.138,
     "scottish-premiership": -0.38,
     "serie-a": 0.182,
-    "turkish-super-lig": -0.234,
+    "turkish-super-lig": -0.233,
     "unknown": -0.044
   }
 }
