@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-03T06:29:51+00:00",
+  "generated_at": "2026-11-03T08:31:49+00:00",
   "refresh": {
     "interval_hours": 3,
     "minute_utc": 5,
@@ -10,18 +10,18 @@
       "id": "premier-league",
       "name": "Ngoại hạng Anh",
       "season": 2026,
-      "fixtures": 11,
+      "fixtures": 10,
       "teams": 20,
-      "history": 40,
+      "history": 41,
       "accuracy": {
-        "matches": 40,
+        "matches": 41,
         "top_pick_correct": 18,
-        "top_pick_accuracy": 0.45,
-        "mean_brier": 0.6176,
+        "top_pick_accuracy": 0.439,
+        "mean_brier": 0.6213,
         "score_exact": {
-          "checked": 40,
+          "checked": 41,
           "correct": 5,
-          "accuracy": 0.125
+          "accuracy": 0.122
         },
         "by_signal_strength": {
           "rõ": {
@@ -35,13 +35,13 @@
             "accuracy": 0.4444
           },
           "mơ hồ": {
-            "matches": 25,
+            "matches": 26,
             "correct": 11,
-            "accuracy": 0.44
+            "accuracy": 0.4231
           }
         }
       },
-      "next_fixture_utc": "2026-11-02T20:00:00Z"
+      "next_fixture_utc": "2026-11-07T15:00:00Z"
     },
     {
       "id": "la-liga",
@@ -173,6 +173,5 @@
       "configured": true,
       "purpose": "kết quả và lịch, không cần key"
     }
-  },
-  "last_light_refresh": "2026-11-03T06:29:51+00:00"
+  }
 }
