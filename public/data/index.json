@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-04T21:14:31+00:00",
+  "generated_at": "2026-11-04T22:51:17+00:00",
   "refresh": {
     "interval_hours": 3,
     "minute_utc": 5,
@@ -86,36 +86,36 @@
       "season": 2026,
       "fixtures": 36,
       "teams": 36,
-      "history": 61,
+      "history": 70,
       "accuracy": {
-        "matches": 61,
-        "top_pick_correct": 41,
-        "top_pick_accuracy": 0.6721,
-        "mean_brier": 0.4884,
+        "matches": 70,
+        "top_pick_correct": 48,
+        "top_pick_accuracy": 0.6857,
+        "mean_brier": 0.4743,
         "score_exact": {
-          "checked": 61,
-          "correct": 5,
-          "accuracy": 0.082
+          "checked": 70,
+          "correct": 6,
+          "accuracy": 0.0857
         },
         "by_signal_strength": {
           "rõ": {
-            "matches": 2,
-            "correct": 2,
+            "matches": 3,
+            "correct": 3,
             "accuracy": 1.0
           },
           "vừa": {
-            "matches": 34,
-            "correct": 26,
-            "accuracy": 0.7647
+            "matches": 40,
+            "correct": 31,
+            "accuracy": 0.775
           },
           "mơ hồ": {
-            "matches": 25,
-            "correct": 17,
-            "accuracy": 0.68
+            "matches": 27,
+            "correct": 19,
+            "accuracy": 0.7037
           }
         }
       },
-      "next_fixture_utc": "2026-11-04T17:45:00Z"
+      "next_fixture_utc": "2026-11-24T17:45:00Z"
     },
     {
       "id": "nations-league",
@@ -173,6 +173,5 @@
       "configured": true,
       "purpose": "kết quả và lịch, không cần key"
     }
-  },
-  "last_light_refresh": "2026-11-04T21:14:31+00:00"
+  }
 }
