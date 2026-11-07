@@ -1,9 +1,9 @@
 {
   "xi": 0.0018,
   "ridge": 2.0,
-  "home_advantage": 0.1981,
-  "rho": -0.0409,
-  "trained_on_matches": 9995,
+  "home_advantage": 0.1983,
+  "rho": -0.0404,
+  "trained_on_matches": 9996,
   "bridge_matches": 378,
   "converged": true,
   "league_levels": {
