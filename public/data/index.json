@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-13T01:45:52+00:00",
+  "generated_at": "2026-11-13T08:44:05+00:00",
   "refresh": {
     "interval_hours": 3,
     "minute_utc": 5,
@@ -121,29 +121,29 @@
       "id": "nations-league",
       "name": "Nations League",
       "season": 2026,
-      "fixtures": 50,
+      "fixtures": 44,
       "teams": 54,
-      "history": 66,
+      "history": 72,
       "accuracy": {
-        "matches": 66,
-        "top_pick_correct": 38,
-        "top_pick_accuracy": 0.5758,
-        "mean_brier": 0.5144,
+        "matches": 72,
+        "top_pick_correct": 43,
+        "top_pick_accuracy": 0.5972,
+        "mean_brier": 0.4938,
         "score_exact": {
-          "checked": 66,
-          "correct": 12,
-          "accuracy": 0.1818
+          "checked": 72,
+          "correct": 14,
+          "accuracy": 0.1944
         },
         "by_signal_strength": {
           "rõ": {
-            "matches": 8,
-            "correct": 6,
-            "accuracy": 0.75
+            "matches": 10,
+            "correct": 8,
+            "accuracy": 0.8
           },
           "vừa": {
-            "matches": 33,
-            "correct": 24,
-            "accuracy": 0.7273
+            "matches": 37,
+            "correct": 28,
+            "accuracy": 0.7568
           },
           "mơ hồ": {
             "matches": 25,
@@ -152,7 +152,7 @@
           }
         }
       },
-      "next_fixture_utc": "2026-11-12T19:45:00Z"
+      "next_fixture_utc": "2026-11-13T17:00:00Z"
     }
   ],
   "model": {
@@ -173,6 +173,5 @@
       "configured": true,
       "purpose": "kết quả và lịch, không cần key"
     }
-  },
-  "last_light_refresh": "2026-11-13T01:45:52+00:00"
+  }
 }
