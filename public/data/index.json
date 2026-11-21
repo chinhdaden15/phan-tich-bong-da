@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-21T10:53:30+00:00",
+  "generated_at": "2026-11-21T16:57:49+00:00",
   "refresh": {
     "interval_hours": 3,
     "minute_utc": 5,
@@ -12,22 +12,22 @@
       "season": 2026,
       "fixtures": 30,
       "teams": 20,
-      "history": 42,
+      "history": 43,
       "accuracy": {
-        "matches": 42,
+        "matches": 43,
         "top_pick_correct": 18,
-        "top_pick_accuracy": 0.4286,
-        "mean_brier": 0.6218,
+        "top_pick_accuracy": 0.4186,
+        "mean_brier": 0.6346,
         "score_exact": {
-          "checked": 42,
+          "checked": 43,
           "correct": 5,
-          "accuracy": 0.119
+          "accuracy": 0.1163
         },
         "by_signal_strength": {
           "rõ": {
-            "matches": 6,
+            "matches": 7,
             "correct": 4,
-            "accuracy": 0.6667
+            "accuracy": 0.5714
           },
           "vừa": {
             "matches": 9,
@@ -41,7 +41,7 @@
           }
         }
       },
-      "next_fixture_utc": "2026-11-21T15:00:00Z"
+      "next_fixture_utc": "2026-11-28T15:00:00Z"
     },
     {
       "id": "la-liga",
@@ -173,6 +173,5 @@
       "configured": true,
       "purpose": "kết quả và lịch, không cần key"
     }
-  },
-  "last_light_refresh": "2026-11-21T10:53:30+00:00"
+  }
 }
