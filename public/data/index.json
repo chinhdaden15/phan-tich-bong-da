@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-22T11:04:05+00:00",
+  "generated_at": "2026-11-22T17:22:41+00:00",
   "refresh": {
     "interval_hours": 3,
     "minute_utc": 5,
@@ -49,27 +49,27 @@
       "season": 2026,
       "fixtures": 30,
       "teams": 20,
-      "history": 50,
+      "history": 52,
       "accuracy": {
-        "matches": 50,
-        "top_pick_correct": 26,
-        "top_pick_accuracy": 0.52,
-        "mean_brier": 0.5569,
+        "matches": 52,
+        "top_pick_correct": 27,
+        "top_pick_accuracy": 0.5192,
+        "mean_brier": 0.5513,
         "score_exact": {
-          "checked": 50,
+          "checked": 52,
           "correct": 11,
-          "accuracy": 0.22
+          "accuracy": 0.2115
         },
         "by_signal_strength": {
           "rõ": {
-            "matches": 4,
-            "correct": 3,
-            "accuracy": 0.75
+            "matches": 5,
+            "correct": 4,
+            "accuracy": 0.8
           },
           "vừa": {
-            "matches": 17,
-            "correct": 13,
-            "accuracy": 0.7647
+            "matches": 18,
+            "correct": 14,
+            "accuracy": 0.7778
           },
           "mơ hồ": {
             "matches": 29,
@@ -152,7 +152,7 @@
           }
         }
       },
-      "next_fixture_utc": "2027-03-25T19:45:00Z"
+      "next_fixture_utc": null
     }
   ],
   "model": {
@@ -173,6 +173,5 @@
       "configured": true,
       "purpose": "kết quả và lịch, không cần key"
     }
-  },
-  "last_light_refresh": "2026-11-22T11:04:05+00:00"
+  }
 }
