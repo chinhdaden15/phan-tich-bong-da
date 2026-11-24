@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-24T13:31:40+00:00",
+  "generated_at": "2026-11-24T20:21:44+00:00",
   "refresh": {
     "interval_hours": 3,
     "minute_utc": 5,
@@ -84,18 +84,18 @@
       "id": "champions-league",
       "name": "Champions League",
       "season": 2026,
-      "fixtures": 36,
+      "fixtures": 27,
       "teams": 36,
-      "history": 70,
+      "history": 72,
       "accuracy": {
-        "matches": 70,
-        "top_pick_correct": 48,
-        "top_pick_accuracy": 0.6857,
-        "mean_brier": 0.4743,
+        "matches": 72,
+        "top_pick_correct": 49,
+        "top_pick_accuracy": 0.6806,
+        "mean_brier": 0.4714,
         "score_exact": {
-          "checked": 70,
+          "checked": 72,
           "correct": 6,
-          "accuracy": 0.0857
+          "accuracy": 0.0833
         },
         "by_signal_strength": {
           "rõ": {
@@ -104,18 +104,18 @@
             "accuracy": 1.0
           },
           "vừa": {
-            "matches": 40,
-            "correct": 31,
-            "accuracy": 0.775
+            "matches": 41,
+            "correct": 32,
+            "accuracy": 0.7805
           },
           "mơ hồ": {
-            "matches": 27,
+            "matches": 28,
             "correct": 19,
-            "accuracy": 0.7037
+            "accuracy": 0.6786
           }
         }
       },
-      "next_fixture_utc": "2026-11-24T17:45:00Z"
+      "next_fixture_utc": "2026-11-25T17:45:00Z"
     },
     {
       "id": "nations-league",
@@ -173,6 +173,5 @@
       "configured": true,
       "purpose": "kết quả và lịch, không cần key"
     }
-  },
-  "last_light_refresh": "2026-11-24T13:31:40+00:00"
+  }
 }
